@@ -5,6 +5,17 @@ const MIDI_EVENT_SIZE = 4;
 const MIDI_QUEUE_CAPACITY = 64;
 const MIDI_BUFFER_SIZE = MIDI_QUEUE_CAPACITY * MIDI_EVENT_SIZE;
 
+type OscillatorEvent = {
+  type: number; // add: 0 remove: 1, update: 2
+  wave_type?: "Sin" | "Square" | "Saw" | "Triangle";
+  gain?: number; // float32 btw 0 and 1
+  attack_length?: number; // u64
+  decay_length?: number; // u64
+  sustain_gain?: number; // f32 btw 0 and 1
+  release_length?: number; // u64
+  frequency_shift?: number; //f32
+};
+
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
 
@@ -16,6 +27,11 @@ export class SynthApi {
     SynthApi.soundEngine = AudioEngineOrchestrator.getInstance();
 
     SynthApi.midi_queue_buffer = new SharedArrayBuffer(MIDI_BUFFER_SIZE);
+
+    SynthApi.set_midi_sharred_buffer();
+  }
+
+  private static set_midi_sharred_buffer() {
     SynthApi.midi_queue_array = new Uint8Array(SynthApi.midi_queue_buffer);
 
     const midi_control_size = 2 * Int32Array.BYTES_PER_ELEMENT;

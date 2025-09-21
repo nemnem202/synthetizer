@@ -40,33 +40,52 @@ pub struct Oscillator {
     sustain_gain: f32,
     release_length: u64,
     frequency_shift: f32,
+    phase_shift: f32,
+    delay_length: u64,
 }
 
 static TEST_OSCILLATOR: Oscillator = Oscillator {
     wave_type: WaveType::Sine,
     attack_length: 100,
-    decay_length: 3000,
-    sustain_gain: 0.0,
-    release_length: 10,
+    decay_length: 30000,
+    sustain_gain: 0.5,
+    release_length: 1000,
     frequency_shift: 2.0,
+    delay_length: 0,
+    phase_shift: 0.0,
 };
 
 static TEST_OSCILLATOR_2: Oscillator = Oscillator {
     wave_type: WaveType::Sine,
-    attack_length: 50000,
-    decay_length: 80000,
+    attack_length: 100,
+    decay_length: 30000,
     sustain_gain: 0.5,
-    release_length: 50000,
-    frequency_shift: 1.0,
+    release_length: 1000,
+    frequency_shift: 2.0,
+    delay_length: 0,
+    phase_shift: 0.0,
 };
 
 static TEST_OSCILLATOR_3: Oscillator = Oscillator {
-    wave_type: WaveType::Sine,
+    wave_type: WaveType::Saw,
     attack_length: 1000,
     decay_length: 5000,
-    sustain_gain: 0.8,
+    sustain_gain: 0.1,
     release_length: 1000,
-    frequency_shift: 0.5,
+    frequency_shift: 0.25,
+    delay_length: 0,
+    phase_shift: 0.0,
+};
+
+static TEST_OSCILLATOR_4: Oscillator = Oscillator {
+    wave_type: WaveType::Square,
+    attack_length: 100,
+    decay_length: 100,
+    sustain_gain: 0.1,
+    release_length: 1000,
+    frequency_shift: 4.0,
+    delay_length: 0,
+    phase_shift: 0.0,
 };
 
 pub struct AudioBuffers {
@@ -90,7 +109,7 @@ pub struct SharedBuffers {
 thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
     pub static PLAYED_NOTES: RefCell<Vec<Note>> = RefCell::new(Vec::new());
-    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR, TEST_OSCILLATOR_2, TEST_OSCILLATOR_3]);
+    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR, TEST_OSCILLATOR_2]);
 }
 
 #[wasm_bindgen]
@@ -121,11 +140,11 @@ pub struct Note {
 }
 
 impl Note {
-    // num_osc = nombre d'oscillateurs à l'instant de la création
-    fn new(value: u8, velocity: u8, num_osc: usize) -> Self {
-        let osc_states = (0..num_osc)
-            .map(|_| NoteOscState {
-                current_phase: 0.0,
+    fn new(value: u8, velocity: u8, oscillators: &[Oscillator]) -> Self {
+        let osc_states = oscillators
+            .iter()
+            .map(|osc| NoteOscState {
+                current_phase: osc.phase_shift % 1.0, // applique le décalage initial
                 start_sample_index: 0,
                 end_sample_index: 0,
                 finished: false,
@@ -189,8 +208,8 @@ fn add_note(dto: &NoteDTO, current_sample_index: u64) {
         } else {
             // on récupère le nombre d'oscillateurs courants et on crée la note avec cet espace d'états
             OSCILLATORS.with(|osc| {
-                let osc_len = osc.borrow().len();
-                notes_mut.push(Note::new(dto.value, dto.velocity, osc_len));
+                let oscillators = osc.borrow();
+                notes_mut.push(Note::new(dto.value, dto.velocity, &oscillators));
             });
         }
     });
@@ -295,6 +314,28 @@ fn midi_to_freq(note: u8) -> f32 {
     FREQ_A4 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
 }
 
+fn generate_wave_sample(phase: f32, wave_type: WaveType) -> f32 {
+    match wave_type {
+        WaveType::Sine => (phase * TAU).sin(),
+        WaveType::Square => {
+            if phase < 0.5 {
+                1.0
+            } else {
+                -1.0
+            }
+        }
+        WaveType::Saw => 2.0 * (phase - 0.5),
+        WaveType::Triangle => {
+            let v = if phase < 0.5 {
+                4.0 * phase - 1.0
+            } else {
+                3.0 - 4.0 * phase
+            };
+            v
+        }
+    }
+}
+
 fn generate_sample_for_note(note: &mut Note, osc: &Oscillator, osc_index: usize) -> f32 {
     if note.to_remove {
         return 0.0;
@@ -307,13 +348,16 @@ fn generate_sample_for_note(note: &mut Note, osc: &Oscillator, osc_index: usize)
 
     let freq: f32 = midi_to_freq(note.value) * osc.frequency_shift;
 
-    let mut value = (state.current_phase * TAU).sin() * note.velocity as f32 / 127.0;
+    let mut value =
+        generate_wave_sample(state.current_phase, osc.wave_type) * note.velocity as f32 / 127.0;
 
     apply_ADSR(osc, state, note.velocity, note.has_ended, &mut value);
 
     // avance la phase / compteurs uniquement pour CE state
     state.current_phase += freq / SAMPLE_RATE;
+    // state.current_phase += (osc.phase_shift % 1.0);
     state.current_phase %= 1.0;
+
     state.start_sample_index += 1;
 
     if note.has_ended {
@@ -341,11 +385,16 @@ fn apply_ADSR(
             / osc.release_length as f32);
     }
 
-    if state.start_sample_index <= osc.attack_length {
-        *value *= state.start_sample_index as f32 / osc.attack_length as f32;
-    } else if state.start_sample_index <= osc.attack_length + osc.decay_length {
+    if state.start_sample_index <= osc.delay_length {
+        *value = 0.0
+    } else if state.start_sample_index <= osc.attack_length + osc.delay_length {
+        *value *=
+            (state.start_sample_index as f32 - osc.delay_length as f32) / osc.attack_length as f32;
+    } else if state.start_sample_index <= osc.attack_length + osc.decay_length + osc.delay_length {
         *value *= 1.0
-            + ((state.start_sample_index as f32 - osc.attack_length as f32)
+            + ((state.start_sample_index as f32
+                - osc.attack_length as f32
+                - osc.delay_length as f32)
                 * (osc.sustain_gain - 1.0)
                 / osc.decay_length as f32);
     } else {
