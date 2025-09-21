@@ -39,6 +39,7 @@ pub struct Oscillator {
     decay_length: u64,
     sustain_gain: f32,
     release_length: u64,
+    frequency_shift: f32,
 }
 
 static TEST_OSCILLATOR: Oscillator = Oscillator {
@@ -46,16 +47,28 @@ static TEST_OSCILLATOR: Oscillator = Oscillator {
     attack_length: 100,
     decay_length: 3000,
     sustain_gain: 0.0,
-    release_length: 10000,
+    release_length: 10,
+    frequency_shift: 2.0,
 };
 
 static TEST_OSCILLATOR_2: Oscillator = Oscillator {
     wave_type: WaveType::Sine,
-    attack_length: 200,
-    decay_length: 5000,
+    attack_length: 50000,
+    decay_length: 80000,
     sustain_gain: 0.5,
-    release_length: 100,
+    release_length: 50000,
+    frequency_shift: 1.0,
 };
+
+static TEST_OSCILLATOR_3: Oscillator = Oscillator {
+    wave_type: WaveType::Sine,
+    attack_length: 1000,
+    decay_length: 5000,
+    sustain_gain: 0.8,
+    release_length: 1000,
+    frequency_shift: 0.5,
+};
+
 pub struct AudioBuffers {
     flag: Int32Array,
     read_idx: Int32Array,
@@ -77,7 +90,7 @@ pub struct SharedBuffers {
 thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
     pub static PLAYED_NOTES: RefCell<Vec<Note>> = RefCell::new(Vec::new());
-    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR]);
+    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR, TEST_OSCILLATOR_2, TEST_OSCILLATOR_3]);
 }
 
 #[wasm_bindgen]
@@ -88,18 +101,37 @@ pub struct NoteDTO {
 }
 
 #[derive(Debug, Clone)]
+pub struct NoteOscState {
+    pub current_phase: f32,
+    pub start_sample_index: u64, // samples depuis le note-on (pour ADSR attack/decay)
+    pub end_sample_index: u64,   // samples depuis le note-off (pour release)
+    pub finished: bool,          // true quand cet osc a fini son release
+}
+
+#[derive(Debug, Clone)]
 pub struct Note {
     pub value: u8,
     pub velocity: u8,
     pub has_ended: bool,
-    pub to_remove: bool,
+    pub to_remove: bool, // on garde pour l'instant, mais on calculera ça à partir des osc_states
     pub start_sample_index: u64,
     pub end_sample_index: u64,
     pub current_phase: f32,
+    pub osc_states: Vec<NoteOscState>, // <-- nouvel emplacement des états par osc
 }
 
 impl Note {
-    fn new(value: u8, velocity: u8, start_sample_index: u64) -> Self {
+    // num_osc = nombre d'oscillateurs à l'instant de la création
+    fn new(value: u8, velocity: u8, num_osc: usize) -> Self {
+        let osc_states = (0..num_osc)
+            .map(|_| NoteOscState {
+                current_phase: 0.0,
+                start_sample_index: 0,
+                end_sample_index: 0,
+                finished: false,
+            })
+            .collect();
+
         Note {
             value,
             velocity,
@@ -108,8 +140,60 @@ impl Note {
             start_sample_index: 0,
             end_sample_index: 0,
             current_phase: 0.0,
+            osc_states,
         }
     }
+}
+
+fn add_note(dto: &NoteDTO, current_sample_index: u64) {
+    console::log_1(
+        &format!(
+            "Nouvelle note: valeur={}, fréquence={}",
+            dto.value,
+            midi_to_freq(dto.value)
+        )
+        .into(),
+    );
+    PLAYED_NOTES.with(|notes| {
+        let mut notes_mut = notes.borrow_mut();
+
+        if let Some(existing_note) = notes_mut.iter_mut().find(|n| n.value == dto.value) {
+            console::log_1(&format!("La note existe déja").into());
+            if existing_note.has_ended {
+                existing_note.has_ended = false;
+                existing_note.end_sample_index = 0;
+                existing_note.start_sample_index = 0;
+
+                // réinitialise les osc_states : si le nombre d'osc a changé, recrée le vecteur
+                OSCILLATORS.with(|osc| {
+                    let osc_len = osc.borrow().len();
+                    if existing_note.osc_states.len() != osc_len {
+                        existing_note.osc_states = (0..osc_len)
+                            .map(|_| NoteOscState {
+                                current_phase: 0.0,
+                                start_sample_index: 0,
+                                end_sample_index: 0,
+                                finished: false,
+                            })
+                            .collect();
+                    } else {
+                        for s in existing_note.osc_states.iter_mut() {
+                            s.current_phase = 0.0;
+                            s.start_sample_index = 0;
+                            s.end_sample_index = 0;
+                            s.finished = false;
+                        }
+                    }
+                });
+            }
+        } else {
+            // on récupère le nombre d'oscillateurs courants et on crée la note avec cet espace d'états
+            OSCILLATORS.with(|osc| {
+                let osc_len = osc.borrow().len();
+                notes_mut.push(Note::new(dto.value, dto.velocity, osc_len));
+            });
+        }
+    });
 }
 
 #[wasm_bindgen]
@@ -192,32 +276,6 @@ fn process_all_midi_events(midi: &MidiBuffers, current_sample_index: u64) {
     }
 }
 
-fn add_note(dto: &NoteDTO, current_sample_index: u64) {
-    console::log_1(
-        &format!(
-            "Nouvelle note: valeur={}, fréquence={}",
-            dto.value,
-            midi_to_freq(dto.value)
-        )
-        .into(),
-    );
-    PLAYED_NOTES.with(|notes| {
-        let mut notes_mut = notes.borrow_mut();
-
-        if let Some(existing_note) = notes_mut.iter_mut().find(|n| n.value == dto.value) {
-            console::log_1(&format!("La note existe déja").into());
-            if existing_note.has_ended {
-                existing_note.has_ended = false;
-                existing_note.end_sample_index = 0;
-                existing_note.start_sample_index = 0;
-            }
-        } else {
-            console::log_1(&format!("On push la note dans le tableau").into());
-            notes_mut.push(Note::new(dto.value, dto.velocity, current_sample_index));
-        }
-    });
-}
-
 fn set_note_end(dto: &NoteDTO) {
     PLAYED_NOTES.with(|notes| {
         let mut notes_mut = notes.borrow_mut();
@@ -237,46 +295,61 @@ fn midi_to_freq(note: u8) -> f32 {
     FREQ_A4 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
 }
 
-fn generate_sample_for_note(note: &mut Note, osc: &Oscillator) -> f32 {
-    if note.to_remove == true {
+fn generate_sample_for_note(note: &mut Note, osc: &Oscillator, osc_index: usize) -> f32 {
+    if note.to_remove {
         return 0.0;
     }
-    let freq = midi_to_freq(note.value);
 
-    let mut value = (note.current_phase * TAU).sin() * note.velocity as f32 / 127.0;
-
-    apply_ADSR(osc, note, &mut value);
-
-    note.current_phase += freq / SAMPLE_RATE;
-    note.start_sample_index += 1;
-    note.current_phase %= 1.0;
-    if (note.has_ended) {
-        note.end_sample_index += 1
+    let state = &mut note.osc_states[osc_index];
+    if state.finished {
+        return 0.0;
     }
+
+    let freq: f32 = midi_to_freq(note.value) * osc.frequency_shift;
+
+    let mut value = (state.current_phase * TAU).sin() * note.velocity as f32 / 127.0;
+
+    apply_ADSR(osc, state, note.velocity, note.has_ended, &mut value);
+
+    // avance la phase / compteurs uniquement pour CE state
+    state.current_phase += freq / SAMPLE_RATE;
+    state.current_phase %= 1.0;
+    state.start_sample_index += 1;
+
+    if note.has_ended {
+        state.end_sample_index += 1;
+    }
+
     value
 }
 
-fn apply_ADSR(osc: &Oscillator, note: &mut Note, value: &mut f32) {
-    if note.has_ended {
-        if (osc.release_length == note.end_sample_index) {
-            note.to_remove = true;
+fn apply_ADSR(
+    osc: &Oscillator,
+    state: &mut NoteOscState,
+    note_velocity: u8,
+    note_has_ended: bool,
+    value: &mut f32,
+) {
+    if note_has_ended {
+        if state.end_sample_index >= osc.release_length {
+            state.finished = true; // cet osc est terminé
             *value = 0.0;
             return;
         }
 
-        *value *= ((osc.release_length as f32 - note.end_sample_index as f32)
+        *value *= ((osc.release_length as f32 - state.end_sample_index as f32)
             / osc.release_length as f32);
     }
 
-    if (note.start_sample_index <= osc.attack_length) {
-        *value *= note.start_sample_index as f32 / osc.attack_length as f32
-    } else if (note.start_sample_index <= osc.attack_length + osc.decay_length) {
+    if state.start_sample_index <= osc.attack_length {
+        *value *= state.start_sample_index as f32 / osc.attack_length as f32;
+    } else if state.start_sample_index <= osc.attack_length + osc.decay_length {
         *value *= 1.0
-            + ((note.start_sample_index as f32 - osc.attack_length as f32)
+            + ((state.start_sample_index as f32 - osc.attack_length as f32)
                 * (osc.sustain_gain - 1.0)
-                / osc.decay_length as f32)
-    } else if (note.start_sample_index >= osc.attack_length + osc.decay_length) {
-        *value *= osc.sustain_gain
+                / osc.decay_length as f32);
+    } else {
+        *value *= osc.sustain_gain;
     }
 }
 
@@ -286,16 +359,16 @@ fn generate_samples(space: i32, current_sample_index_ref: &mut u64) -> Vec<f32> 
     OSCILLATORS.with(|osc| {
         PLAYED_NOTES.with(|notes_cell| {
             let mut notes_mut = notes_cell.borrow_mut();
-
-            notes_mut.retain(|note| {
-                let keep = !note.to_remove;
-                if (note.to_remove) {
-                    console::log_1(&format!("note supprimee").into());
-                }
-                keep
-            });
-
             let oscillators = osc.borrow();
+
+            // suppression des notes mortes (tous les osc terminés)
+            notes_mut.retain(|note| {
+                let all_finished = note.osc_states.iter().all(|s| s.finished);
+                if all_finished {
+                    console::log_1(&format!("note {} supprimée", note.value).into());
+                }
+                !all_finished
+            });
 
             for _ in 0..space {
                 *current_sample_index_ref += 1;
@@ -306,20 +379,21 @@ fn generate_samples(space: i32, current_sample_index_ref: &mut u64) -> Vec<f32> 
                 }
 
                 let mut osc_sum = 0.0;
-                for oscillator in oscillators.iter() {
-                    let note_sum: f32 = notes_mut
-                        .iter_mut()
-                        .map(|note| generate_sample_for_note(note, oscillator))
-                        .sum();
-                    osc_sum += note_sum;
+
+                for note in notes_mut.iter_mut() {
+                    let mut note_sum = 0.0;
+
+                    for (osc_index, oscillator) in oscillators.iter().enumerate() {
+                        note_sum += generate_sample_for_note(note, oscillator, osc_index);
+                    }
+
+                    osc_sum += note_sum; // on ajoute la contribution de cette note au mix final
                 }
 
-                // let norm_factor = (notes_mut.len() * oscillators.len()).max(1) as f32;
                 local_samples.push(osc_sum * 0.1);
             }
         });
     });
-
     local_samples
 }
 
