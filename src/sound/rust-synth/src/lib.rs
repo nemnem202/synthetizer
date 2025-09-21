@@ -45,7 +45,7 @@ pub struct Oscillator {
 }
 
 static TEST_OSCILLATOR: Oscillator = Oscillator {
-    wave_type: WaveType::Sine,
+    wave_type: WaveType::Square,
     attack_length: 100,
     decay_length: 30000,
     sustain_gain: 0.5,
@@ -109,7 +109,7 @@ pub struct SharedBuffers {
 thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
     pub static PLAYED_NOTES: RefCell<Vec<Note>> = RefCell::new(Vec::new());
-    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR, TEST_OSCILLATOR_2]);
+    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR]);
 }
 
 #[wasm_bindgen]
