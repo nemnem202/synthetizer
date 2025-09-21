@@ -1,0 +1,20 @@
+{
+  "name": "synthetizer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "watch:wasm": "cd src/sound/rust-synth && cargo watch -w src -s \"wasm-pack build --target web --out-dir build\"",
+    "dev": "concurrently \"npm run watch:wasm\" \"vite\"",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3",
+    "vite": "^7.1.6"
+  },
+  "dependencies": {
+    "@types/audioworklet": "^0.0.84",
+    "concurrently": "^9.2.1"
+  }
+}
