@@ -35,25 +35,25 @@ pub enum WaveType {
 #[derive(Debug, Clone, Copy)]
 pub struct Oscillator {
     wave_type: WaveType,
-    attack: u64,
-    decay: u64,
-    sustain: f32,
+    attack_length: u64,
+    decay_length: u64,
+    sustain_gain: f32,
     release_length: u64,
 }
 
 static TEST_OSCILLATOR: Oscillator = Oscillator {
     wave_type: WaveType::Sine,
-    attack: 200,
-    decay: 5000,
-    sustain: 0.5,
+    attack_length: 100,
+    decay_length: 3000,
+    sustain_gain: 0.0,
     release_length: 10000,
 };
 
 static TEST_OSCILLATOR_2: Oscillator = Oscillator {
     wave_type: WaveType::Sine,
-    attack: 200,
-    decay: 5000,
-    sustain: 0.5,
+    attack_length: 200,
+    decay_length: 5000,
+    sustain_gain: 0.5,
     release_length: 100,
 };
 pub struct AudioBuffers {
@@ -266,8 +266,17 @@ fn apply_ADSR(osc: &Oscillator, note: &mut Note, value: &mut f32) {
 
         *value *= ((osc.release_length as f32 - note.end_sample_index as f32)
             / osc.release_length as f32);
+    }
 
-        return;
+    if (note.start_sample_index <= osc.attack_length) {
+        *value *= note.start_sample_index as f32 / osc.attack_length as f32
+    } else if (note.start_sample_index <= osc.attack_length + osc.decay_length) {
+        *value *= 1.0
+            + ((note.start_sample_index as f32 - osc.attack_length as f32)
+                * (osc.sustain_gain - 1.0)
+                / osc.decay_length as f32)
+    } else if (note.start_sample_index >= osc.attack_length + osc.decay_length) {
+        *value *= osc.sustain_gain
     }
 }
 
