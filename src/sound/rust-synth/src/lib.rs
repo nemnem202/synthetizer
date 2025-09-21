@@ -5,6 +5,10 @@ use std::f32::consts::TAU;
 use wasm_bindgen::prelude::*;
 use web_sys::console;
 
+// =============================================================================
+// CONSTANTES
+// =============================================================================
+
 const FLAG_INDEX: u32 = 0;
 const READ_INDEX: u32 = 1;
 const WRITE_INDEX: u32 = 2;
@@ -15,11 +19,30 @@ const MIDI_QUEUE_CAPACITY: u32 = 64;
 const MIDI_WRITE_INDEX: u32 = 0;
 const MIDI_READ_INDEX: u32 = 1;
 
+const SAMPLE_RATE: f32 = 44100.0;
+const FREQ_A4: f32 = 440.0;
+
+// =============================================================================
+// TYPES ET ENUMS
+// =============================================================================
+
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EventType {
     NoteOff = 0,
     NoteOn = 1,
+}
+
+impl TryFrom<u8> for EventType {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(EventType::NoteOff),
+            1 => Ok(EventType::NoteOn),
+            _ => Err("Valeur d'événement MIDI inconnue"),
+        }
+    }
 }
 
 #[wasm_bindgen]
@@ -30,6 +53,51 @@ pub enum WaveType {
     Saw,
     Triangle,
 }
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy)]
+pub struct NoteDTO {
+    pub value: u8,
+    pub velocity: u8,
+}
+
+// =============================================================================
+// GÉNÉRATEUR D'ONDES
+// =============================================================================
+
+pub struct WaveGenerator;
+
+impl WaveGenerator {
+    pub fn midi_to_freq(note: u8) -> f32 {
+        FREQ_A4 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+    }
+
+    pub fn generate_sample(phase: f32, wave_type: WaveType) -> f32 {
+        match wave_type {
+            WaveType::Sine => (phase * TAU).sin(),
+            WaveType::Square => {
+                if phase < 0.5 {
+                    1.0
+                } else {
+                    -1.0
+                }
+            }
+            WaveType::Saw => 2.0 * (phase - 0.5),
+            WaveType::Triangle => {
+                let v = if phase < 0.5 {
+                    4.0 * phase - 1.0
+                } else {
+                    3.0 - 4.0 * phase
+                };
+                v
+            }
+        }
+    }
+}
+
+// =============================================================================
+// OSCILLATEUR ET ADSR
+// =============================================================================
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
@@ -44,8 +112,410 @@ pub struct Oscillator {
     delay_length: u64,
 }
 
+impl Oscillator {
+    pub fn apply_adsr(&self, state: &mut NoteOscState, note_has_ended: bool, value: &mut f32) {
+        if note_has_ended {
+            if state.end_sample_index >= self.release_length {
+                state.finished = true;
+                *value = 0.0;
+                return;
+            }
+
+            *value *= ((self.release_length as f32 - state.end_sample_index as f32)
+                / self.release_length as f32);
+        }
+
+        if state.start_sample_index <= self.delay_length {
+            *value = 0.0
+        } else if state.start_sample_index <= self.attack_length + self.delay_length {
+            *value *= (state.start_sample_index as f32 - self.delay_length as f32)
+                / self.attack_length as f32;
+        } else if state.start_sample_index
+            <= self.attack_length + self.decay_length + self.delay_length
+        {
+            *value *= 1.0
+                + ((state.start_sample_index as f32
+                    - self.attack_length as f32
+                    - self.delay_length as f32)
+                    * (self.sustain_gain - 1.0)
+                    / self.decay_length as f32);
+        } else {
+            *value *= self.sustain_gain;
+        }
+    }
+
+    pub fn generate_sample(
+        &self,
+        note_value: u8,
+        note_velocity: u8,
+        state: &mut NoteOscState,
+        note_has_ended: bool,
+    ) -> f32 {
+        if state.finished {
+            return 0.0;
+        }
+
+        let freq: f32 = WaveGenerator::midi_to_freq(note_value) * self.frequency_shift;
+
+        let mut value = WaveGenerator::generate_sample(state.current_phase, self.wave_type)
+            * note_velocity as f32
+            / 127.0;
+
+        self.apply_adsr(state, note_has_ended, &mut value);
+
+        // Mise à jour de l'état
+        state.current_phase += freq / SAMPLE_RATE;
+        state.current_phase %= 1.0;
+        state.start_sample_index += 1;
+
+        if note_has_ended {
+            state.end_sample_index += 1;
+        }
+
+        value
+    }
+}
+
+// =============================================================================
+// ÉTAT D'OSCILLATEUR ET NOTE
+// =============================================================================
+
+#[derive(Debug, Clone)]
+pub struct NoteOscState {
+    pub current_phase: f32,
+    pub start_sample_index: u64,
+    pub end_sample_index: u64,
+    pub finished: bool,
+}
+
+impl NoteOscState {
+    pub fn new(phase_shift: f32) -> Self {
+        Self {
+            current_phase: phase_shift % 1.0,
+            start_sample_index: 0,
+            end_sample_index: 0,
+            finished: false,
+        }
+    }
+
+    pub fn reset(&mut self, phase_shift: f32) {
+        self.current_phase = phase_shift % 1.0;
+        self.start_sample_index = 0;
+        self.end_sample_index = 0;
+        self.finished = false;
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Note {
+    pub value: u8,
+    pub velocity: u8,
+    pub has_ended: bool,
+    pub to_remove: bool,
+    pub start_sample_index: u64,
+    pub end_sample_index: u64,
+    pub current_phase: f32,
+    pub osc_states: Vec<NoteOscState>,
+}
+
+impl Note {
+    pub fn new(value: u8, velocity: u8, oscillators: &[Oscillator]) -> Self {
+        let osc_states = oscillators
+            .iter()
+            .map(|osc| NoteOscState::new(osc.phase_shift))
+            .collect();
+
+        Note {
+            value,
+            velocity,
+            has_ended: false,
+            to_remove: false,
+            start_sample_index: 0,
+            end_sample_index: 0,
+            current_phase: 0.0,
+            osc_states,
+        }
+    }
+
+    pub fn restart(&mut self, oscillators: &[Oscillator]) {
+        self.has_ended = false;
+        self.end_sample_index = 0;
+        self.start_sample_index = 0;
+
+        // Réajuster si le nombre d'oscillateurs a changé
+        if self.osc_states.len() != oscillators.len() {
+            self.osc_states = oscillators
+                .iter()
+                .map(|osc| NoteOscState::new(osc.phase_shift))
+                .collect();
+        } else {
+            for (state, osc) in self.osc_states.iter_mut().zip(oscillators.iter()) {
+                state.reset(osc.phase_shift);
+            }
+        }
+    }
+
+    pub fn end_note(&mut self) {
+        self.has_ended = true;
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.osc_states.iter().all(|s| s.finished)
+    }
+
+    pub fn generate_sample(&mut self, oscillators: &[Oscillator]) -> f32 {
+        if self.to_remove {
+            return 0.0;
+        }
+
+        let mut note_sum = 0.0;
+
+        for (osc_index, oscillator) in oscillators.iter().enumerate() {
+            if let Some(state) = self.osc_states.get_mut(osc_index) {
+                note_sum +=
+                    oscillator.generate_sample(self.value, self.velocity, state, self.has_ended);
+            }
+        }
+
+        note_sum
+    }
+}
+
+// =============================================================================
+// GESTIONNAIRE DE NOTES
+// =============================================================================
+
+pub struct NoteManager {
+    notes: Vec<Note>,
+}
+
+impl NoteManager {
+    pub fn new() -> Self {
+        Self { notes: Vec::new() }
+    }
+
+    pub fn add_note(&mut self, dto: &NoteDTO, oscillators: &[Oscillator]) {
+        console::log_1(
+            &format!(
+                "Nouvelle note: valeur={}, fréquence={}",
+                dto.value,
+                WaveGenerator::midi_to_freq(dto.value)
+            )
+            .into(),
+        );
+
+        if let Some(existing_note) = self.notes.iter_mut().find(|n| n.value == dto.value) {
+            console::log_1(&"La note existe déjà".into());
+            if existing_note.has_ended {
+                existing_note.restart(oscillators);
+            }
+        } else {
+            self.notes
+                .push(Note::new(dto.value, dto.velocity, oscillators));
+        }
+    }
+
+    pub fn end_note(&mut self, dto: &NoteDTO) {
+        for note in self.notes.iter_mut() {
+            if note.value == dto.value && !note.has_ended {
+                note.end_note();
+            }
+        }
+    }
+
+    pub fn cleanup_finished_notes(&mut self) {
+        let initial_count = self.notes.len();
+        self.notes.retain(|note| {
+            let finished = note.is_finished();
+            if finished {
+                console::log_1(&format!("note {} supprimée", note.value).into());
+            }
+            !finished
+        });
+    }
+
+    pub fn generate_samples(&mut self, sample_count: i32, oscillators: &[Oscillator]) -> Vec<f32> {
+        let mut samples = Vec::with_capacity(sample_count as usize);
+
+        for _ in 0..sample_count {
+            if self.notes.is_empty() {
+                samples.push(0.0);
+                continue;
+            }
+
+            let mut mixed_sample = 0.0;
+            for note in self.notes.iter_mut() {
+                mixed_sample += note.generate_sample(oscillators);
+            }
+
+            samples.push(mixed_sample * 0.1); // Volume global
+        }
+
+        // Nettoyage des notes terminées
+        self.cleanup_finished_notes();
+        samples
+    }
+}
+
+// =============================================================================
+// STRUCTURES DE BUFFERS
+// =============================================================================
+
+pub struct AudioBuffers {
+    flag: Int32Array,
+    read_idx: Int32Array,
+    write_idx: Int32Array,
+    ring_buffer: Float32Array,
+}
+
+pub struct MidiBuffers {
+    write_idx: Int32Array,
+    read_idx: Int32Array,
+    queue: Uint8Array,
+}
+
+impl MidiBuffers {
+    pub fn dequeue_event(&self) -> Option<NoteDTO> {
+        let read_pos = Atomics::load(&self.read_idx, 0).unwrap() as u32;
+        let write_pos = Atomics::load(&self.write_idx, 0).unwrap() as u32;
+
+        if read_pos == write_pos {
+            return None;
+        }
+
+        let event_offset = read_pos * MIDI_EVENT_SIZE;
+        let _event_type = self.queue.get_index(event_offset);
+        let note_value = self.queue.get_index(event_offset + 1);
+        let velocity = self.queue.get_index(event_offset + 2);
+
+        let new_read_pos = (read_pos + 1) % MIDI_QUEUE_CAPACITY;
+        Atomics::store(&self.read_idx, 0, new_read_pos as i32).unwrap();
+
+        Some(NoteDTO {
+            value: note_value,
+            velocity,
+        })
+    }
+
+    pub fn process_all_events<F>(&self, mut handler: F) -> u32
+    where
+        F: FnMut(&NoteDTO),
+    {
+        let mut events_processed = 0;
+
+        while let Some(dto) = self.dequeue_event() {
+            events_processed += 1;
+            handler(&dto);
+        }
+
+        if events_processed > 0 {
+            console::log_1(&format!("{} événements MIDI traités", events_processed).into());
+        }
+
+        events_processed
+    }
+}
+
+pub struct SharedBuffers {
+    audio: AudioBuffers,
+    midi: MidiBuffers,
+}
+
+// =============================================================================
+// GESTIONNAIRE DE RING BUFFER
+// =============================================================================
+
+pub struct RingBufferManager<'a> {
+    ring_buffer: &'a Float32Array,
+    write_idx_atomic: &'a Int32Array,
+    buffer_size: i32,
+}
+
+impl<'a> RingBufferManager<'a> {
+    pub fn new(ring_buffer: &'a Float32Array, write_idx_atomic: &'a Int32Array) -> Self {
+        Self {
+            ring_buffer,
+            write_idx_atomic,
+            buffer_size: ring_buffer.length() as i32,
+        }
+    }
+
+    pub fn write_samples(&self, samples: &[f32]) {
+        let space = samples.len() as i32;
+        let mut current_write_idx = Atomics::load(self.write_idx_atomic, 0).unwrap();
+        let chunk_array = Float32Array::from(samples);
+
+        let contiguous_space = std::cmp::min(space, self.buffer_size - current_write_idx);
+
+        if contiguous_space > 0 {
+            self.ring_buffer.set(
+                &chunk_array.subarray(0, contiguous_space as u32),
+                current_write_idx as u32,
+            );
+        }
+
+        if space > contiguous_space {
+            let rest = space - contiguous_space;
+            self.ring_buffer.set(
+                &chunk_array.subarray(contiguous_space as u32, (contiguous_space + rest) as u32),
+                0,
+            );
+            current_write_idx = rest;
+        } else {
+            current_write_idx = (current_write_idx + contiguous_space) % self.buffer_size;
+        }
+
+        Atomics::store(self.write_idx_atomic, 0, current_write_idx).unwrap();
+    }
+}
+
+// =============================================================================
+// PROCESSEUR AUDIO PRINCIPAL
+// =============================================================================
+
+pub struct AudioProcessor {
+    note_manager: NoteManager,
+    oscillators: Vec<Oscillator>,
+    global_sample_index: u64,
+}
+
+impl AudioProcessor {
+    pub fn new(oscillators: Vec<Oscillator>) -> Self {
+        Self {
+            note_manager: NoteManager::new(),
+            oscillators,
+            global_sample_index: 0,
+        }
+    }
+
+    pub fn process_midi_events(&mut self, midi: &MidiBuffers) {
+        midi.process_all_events(|dto| {
+            if dto.velocity > 0 {
+                self.note_manager.add_note(dto, &self.oscillators);
+            } else {
+                self.note_manager.end_note(dto);
+            }
+        });
+    }
+
+    pub fn generate_audio_chunk(&mut self, sample_count: i32) -> Vec<f32> {
+        self.global_sample_index += sample_count as u64;
+        self.note_manager
+            .generate_samples(sample_count, &self.oscillators)
+    }
+
+    pub fn fill_audio_buffer(&mut self, space: i32, ring_buffer_manager: &RingBufferManager) {
+        let samples = self.generate_audio_chunk(space);
+        ring_buffer_manager.write_samples(&samples);
+    }
+}
+
+// =============================================================================
+// VARIABLES GLOBALES ET CONFIGURATIONS
+// =============================================================================
+
 static TEST_OSCILLATOR: Oscillator = Oscillator {
-    wave_type: WaveType::Square,
+    wave_type: WaveType::Sine,
     attack_length: 100,
     decay_length: 30000,
     sustain_gain: 0.5,
@@ -88,134 +558,17 @@ static TEST_OSCILLATOR_4: Oscillator = Oscillator {
     phase_shift: 0.0,
 };
 
-pub struct AudioBuffers {
-    flag: Int32Array,
-    read_idx: Int32Array,
-    write_idx: Int32Array,
-    ring_buffer: Float32Array,
-}
-
-pub struct MidiBuffers {
-    write_idx: Int32Array,
-    read_idx: Int32Array,
-    queue: Uint8Array,
-}
-
-pub struct SharedBuffers {
-    audio: AudioBuffers,
-    midi: MidiBuffers,
-}
-
 thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
-    pub static PLAYED_NOTES: RefCell<Vec<Note>> = RefCell::new(Vec::new());
-    pub static OSCILLATORS: RefCell<Vec<Oscillator>> = RefCell::new(vec![TEST_OSCILLATOR]);
+    static AUDIO_PROCESSOR: RefCell<Option<AudioProcessor>> = RefCell::new(None);
 }
+
+// =============================================================================
+// INITIALISATION ET BOUCLE PRINCIPALE
+// =============================================================================
 
 #[wasm_bindgen]
-#[derive(Debug, Clone, Copy)]
-pub struct NoteDTO {
-    pub value: u8,
-    pub velocity: u8,
-}
 
-#[derive(Debug, Clone)]
-pub struct NoteOscState {
-    pub current_phase: f32,
-    pub start_sample_index: u64, // samples depuis le note-on (pour ADSR attack/decay)
-    pub end_sample_index: u64,   // samples depuis le note-off (pour release)
-    pub finished: bool,          // true quand cet osc a fini son release
-}
-
-#[derive(Debug, Clone)]
-pub struct Note {
-    pub value: u8,
-    pub velocity: u8,
-    pub has_ended: bool,
-    pub to_remove: bool, // on garde pour l'instant, mais on calculera ça à partir des osc_states
-    pub start_sample_index: u64,
-    pub end_sample_index: u64,
-    pub current_phase: f32,
-    pub osc_states: Vec<NoteOscState>, // <-- nouvel emplacement des états par osc
-}
-
-impl Note {
-    fn new(value: u8, velocity: u8, oscillators: &[Oscillator]) -> Self {
-        let osc_states = oscillators
-            .iter()
-            .map(|osc| NoteOscState {
-                current_phase: osc.phase_shift % 1.0, // applique le décalage initial
-                start_sample_index: 0,
-                end_sample_index: 0,
-                finished: false,
-            })
-            .collect();
-
-        Note {
-            value,
-            velocity,
-            has_ended: false,
-            to_remove: false,
-            start_sample_index: 0,
-            end_sample_index: 0,
-            current_phase: 0.0,
-            osc_states,
-        }
-    }
-}
-
-fn add_note(dto: &NoteDTO, current_sample_index: u64) {
-    console::log_1(
-        &format!(
-            "Nouvelle note: valeur={}, fréquence={}",
-            dto.value,
-            midi_to_freq(dto.value)
-        )
-        .into(),
-    );
-    PLAYED_NOTES.with(|notes| {
-        let mut notes_mut = notes.borrow_mut();
-
-        if let Some(existing_note) = notes_mut.iter_mut().find(|n| n.value == dto.value) {
-            console::log_1(&format!("La note existe déja").into());
-            if existing_note.has_ended {
-                existing_note.has_ended = false;
-                existing_note.end_sample_index = 0;
-                existing_note.start_sample_index = 0;
-
-                // réinitialise les osc_states : si le nombre d'osc a changé, recrée le vecteur
-                OSCILLATORS.with(|osc| {
-                    let osc_len = osc.borrow().len();
-                    if existing_note.osc_states.len() != osc_len {
-                        existing_note.osc_states = (0..osc_len)
-                            .map(|_| NoteOscState {
-                                current_phase: 0.0,
-                                start_sample_index: 0,
-                                end_sample_index: 0,
-                                finished: false,
-                            })
-                            .collect();
-                    } else {
-                        for s in existing_note.osc_states.iter_mut() {
-                            s.current_phase = 0.0;
-                            s.start_sample_index = 0;
-                            s.end_sample_index = 0;
-                            s.finished = false;
-                        }
-                    }
-                });
-            }
-        } else {
-            // on récupère le nombre d'oscillateurs courants et on crée la note avec cet espace d'états
-            OSCILLATORS.with(|osc| {
-                let oscillators = osc.borrow();
-                notes_mut.push(Note::new(dto.value, dto.velocity, &oscillators));
-            });
-        }
-    });
-}
-
-#[wasm_bindgen]
 pub fn init_audio_thread(
     shared_audio_buffer: SharedArrayBuffer,
     ring_buffer_size: u32,
@@ -251,242 +604,18 @@ pub fn init_audio_thread(
         },
     };
 
+    // Initialisation du processeur audio avec les oscillateurs de test
+    let audio_processor = AudioProcessor::new(vec![
+        TEST_OSCILLATOR,
+        TEST_OSCILLATOR_2,
+        TEST_OSCILLATOR_3,
+        TEST_OSCILLATOR_4,
+    ]);
+
     SHARED_BUFFERS.with(|c| c.set(shared_buffers));
-    console::log_1(&"Buffers initialisés".into());
-}
+    AUDIO_PROCESSOR.with(|p| *p.borrow_mut() = Some(audio_processor));
 
-fn dequeue_midi_event(midi: &MidiBuffers) -> Option<NoteDTO> {
-    let read_pos = Atomics::load(&midi.read_idx, 0).unwrap() as u32;
-    let write_pos = Atomics::load(&midi.write_idx, 0).unwrap() as u32;
-
-    if read_pos == write_pos {
-        return None;
-    }
-
-    let event_offset = read_pos * MIDI_EVENT_SIZE;
-    let event_type = midi.queue.get_index(event_offset);
-    let note_value = midi.queue.get_index(event_offset + 1);
-    let velocity = midi.queue.get_index(event_offset + 2);
-
-    let new_read_pos = (read_pos + 1) % MIDI_QUEUE_CAPACITY;
-    Atomics::store(&midi.read_idx, 0, new_read_pos as i32).unwrap();
-
-    Some(NoteDTO {
-        value: note_value,
-        velocity,
-    })
-}
-
-fn process_all_midi_events(midi: &MidiBuffers, current_sample_index: u64) {
-    let mut events_processed = 0;
-
-    while let Some(dto) = dequeue_midi_event(midi) {
-        events_processed += 1;
-
-        if dto.velocity > 0 {
-            add_note(&dto, current_sample_index);
-        } else {
-            set_note_end(&dto);
-        }
-    }
-
-    if events_processed > 0 {
-        console::log_1(&format!("{} événements MIDI traités", events_processed).into());
-    }
-}
-
-fn set_note_end(dto: &NoteDTO) {
-    PLAYED_NOTES.with(|notes| {
-        let mut notes_mut = notes.borrow_mut();
-        for note in notes_mut.iter_mut() {
-            if note.value == dto.value && !note.has_ended {
-                note.has_ended = true;
-            }
-        }
-    });
-}
-
-const SAMPLE_RATE: f32 = 44100.0;
-
-const FREQ_A4: f32 = 440.0;
-
-fn midi_to_freq(note: u8) -> f32 {
-    FREQ_A4 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
-}
-
-fn generate_wave_sample(phase: f32, wave_type: WaveType) -> f32 {
-    match wave_type {
-        WaveType::Sine => (phase * TAU).sin(),
-        WaveType::Square => {
-            if phase < 0.5 {
-                1.0
-            } else {
-                -1.0
-            }
-        }
-        WaveType::Saw => 2.0 * (phase - 0.5),
-        WaveType::Triangle => {
-            let v = if phase < 0.5 {
-                4.0 * phase - 1.0
-            } else {
-                3.0 - 4.0 * phase
-            };
-            v
-        }
-    }
-}
-
-fn generate_sample_for_note(note: &mut Note, osc: &Oscillator, osc_index: usize) -> f32 {
-    if note.to_remove {
-        return 0.0;
-    }
-
-    let state = &mut note.osc_states[osc_index];
-    if state.finished {
-        return 0.0;
-    }
-
-    let freq: f32 = midi_to_freq(note.value) * osc.frequency_shift;
-
-    let mut value =
-        generate_wave_sample(state.current_phase, osc.wave_type) * note.velocity as f32 / 127.0;
-
-    apply_ADSR(osc, state, note.velocity, note.has_ended, &mut value);
-
-    // avance la phase / compteurs uniquement pour CE state
-    state.current_phase += freq / SAMPLE_RATE;
-    // state.current_phase += (osc.phase_shift % 1.0);
-    state.current_phase %= 1.0;
-
-    state.start_sample_index += 1;
-
-    if note.has_ended {
-        state.end_sample_index += 1;
-    }
-
-    value
-}
-
-fn apply_ADSR(
-    osc: &Oscillator,
-    state: &mut NoteOscState,
-    note_velocity: u8,
-    note_has_ended: bool,
-    value: &mut f32,
-) {
-    if note_has_ended {
-        if state.end_sample_index >= osc.release_length {
-            state.finished = true; // cet osc est terminé
-            *value = 0.0;
-            return;
-        }
-
-        *value *= ((osc.release_length as f32 - state.end_sample_index as f32)
-            / osc.release_length as f32);
-    }
-
-    if state.start_sample_index <= osc.delay_length {
-        *value = 0.0
-    } else if state.start_sample_index <= osc.attack_length + osc.delay_length {
-        *value *=
-            (state.start_sample_index as f32 - osc.delay_length as f32) / osc.attack_length as f32;
-    } else if state.start_sample_index <= osc.attack_length + osc.decay_length + osc.delay_length {
-        *value *= 1.0
-            + ((state.start_sample_index as f32
-                - osc.attack_length as f32
-                - osc.delay_length as f32)
-                * (osc.sustain_gain - 1.0)
-                / osc.decay_length as f32);
-    } else {
-        *value *= osc.sustain_gain;
-    }
-}
-
-fn generate_samples(space: i32, current_sample_index_ref: &mut u64) -> Vec<f32> {
-    let mut local_samples = Vec::with_capacity(space as usize);
-
-    OSCILLATORS.with(|osc| {
-        PLAYED_NOTES.with(|notes_cell| {
-            let mut notes_mut = notes_cell.borrow_mut();
-            let oscillators = osc.borrow();
-
-            // suppression des notes mortes (tous les osc terminés)
-            notes_mut.retain(|note| {
-                let all_finished = note.osc_states.iter().all(|s| s.finished);
-                if all_finished {
-                    console::log_1(&format!("note {} supprimée", note.value).into());
-                }
-                !all_finished
-            });
-
-            for _ in 0..space {
-                *current_sample_index_ref += 1;
-
-                if notes_mut.is_empty() {
-                    local_samples.push(0.0);
-                    continue;
-                }
-
-                let mut osc_sum = 0.0;
-
-                for note in notes_mut.iter_mut() {
-                    let mut note_sum = 0.0;
-
-                    for (osc_index, oscillator) in oscillators.iter().enumerate() {
-                        note_sum += generate_sample_for_note(note, oscillator, osc_index);
-                    }
-
-                    osc_sum += note_sum; // on ajoute la contribution de cette note au mix final
-                }
-
-                local_samples.push(osc_sum * 0.1);
-            }
-        });
-    });
-    local_samples
-}
-
-fn write_to_ring_buffer(
-    ring_buffer: &Float32Array,
-    write_idx_atomic: &Int32Array,
-    n: i32,
-    local_samples: &[f32],
-) {
-    let space = local_samples.len() as i32;
-    let mut current_write_idx = Atomics::load(write_idx_atomic, 0).unwrap();
-    let chunk_array = Float32Array::from(local_samples);
-
-    let contiguous_space = std::cmp::min(space, n - current_write_idx);
-
-    if contiguous_space > 0 {
-        ring_buffer.set(
-            &chunk_array.subarray(0, contiguous_space as u32),
-            current_write_idx as u32,
-        );
-    }
-    if space > contiguous_space {
-        let rest = space - contiguous_space;
-        ring_buffer.set(
-            &chunk_array.subarray(contiguous_space as u32, (contiguous_space + rest) as u32),
-            0,
-        );
-        current_write_idx = rest;
-    } else {
-        current_write_idx = (current_write_idx + contiguous_space) % n;
-    }
-
-    Atomics::store(write_idx_atomic, 0, current_write_idx).unwrap();
-}
-
-fn fill_audio_chunk(
-    space: i32,
-    ring_buffer: &Float32Array,
-    write_idx_atomic: &Int32Array,
-    n: i32,
-    current_sample_index_ref: &mut u64,
-) {
-    let local_samples = generate_samples(space, current_sample_index_ref);
-    write_to_ring_buffer(ring_buffer, write_idx_atomic, n, &local_samples);
+    console::log_1(&"Buffers et processeur audio initialisés".into());
 }
 
 fn audio_producer_loop(buffers: &SharedBuffers) {
@@ -496,30 +625,28 @@ fn audio_producer_loop(buffers: &SharedBuffers) {
     let ring_buffer = &buffers.audio.ring_buffer;
     let midi = &buffers.midi;
 
-    let ring_buffer_len = ring_buffer.length() as i32;
-    let mut global_sample_index: u64 = 0;
-
     console::log_1(&"Démarrage de la boucle audio (infinie)".into());
 
     loop {
         Atomics::wait(flag, 0, 1).unwrap();
 
-        process_all_midi_events(midi, global_sample_index);
+        AUDIO_PROCESSOR.with(|processor_cell| {
+            if let Some(ref mut processor) = *processor_cell.borrow_mut() {
+                // Traitement des événements MIDI
+                processor.process_midi_events(midi);
 
-        let r_idx = Atomics::load(read_idx, 0).unwrap();
-        let w_idx = Atomics::load(write_idx, 0).unwrap();
+                // Calcul de l'espace disponible dans le ring buffer
+                let r_idx = Atomics::load(read_idx, 0).unwrap();
+                let w_idx = Atomics::load(write_idx, 0).unwrap();
+                let ring_buffer_len = ring_buffer.length() as i32;
+                let space_available = (r_idx - w_idx - 1 + ring_buffer_len) % ring_buffer_len;
 
-        let space_available = (r_idx - w_idx - 1 + ring_buffer_len) % ring_buffer_len;
-
-        if space_available > 0 {
-            fill_audio_chunk(
-                space_available,
-                ring_buffer,
-                write_idx,
-                ring_buffer_len,
-                &mut global_sample_index,
-            );
-        }
+                if space_available > 0 {
+                    let ring_buffer_manager = RingBufferManager::new(ring_buffer, write_idx);
+                    processor.fill_audio_buffer(space_available, &ring_buffer_manager);
+                }
+            }
+        });
 
         Atomics::store(flag, 0, 0).unwrap();
         Atomics::notify(flag, 0).unwrap();
@@ -532,16 +659,4 @@ pub fn start_audio_processing_loop() {
         let buffers = cell.get().expect("SharedBuffers not initialized!");
         audio_producer_loop(buffers);
     });
-}
-
-impl TryFrom<u8> for EventType {
-    type Error = &'static str;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(EventType::NoteOff),
-            1 => Ok(EventType::NoteOn),
-            _ => Err("Valeur d'événement MIDI inconnue"),
-        }
-    }
 }
