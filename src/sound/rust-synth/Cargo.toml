@@ -13,6 +13,8 @@ wasm-bindgen = "0.2"
 web-sys = { version = "0.3.80", features = ["console", "Window", "WorkerGlobalScope"] }
 
 [profile.release]
-opt-level = "z"   
-lto = true         
-codegen-units = 1
+opt-level = "z"          # "z" = optimisé pour la taille, "s" pour la taille, 3 pour la vitesse max
+lto = true               # Link Time Optimization pour améliorer les performances
+codegen-units = 1        # Réduit le parallélisme de compilation mais améliore l'optimisation
+panic = "abort"          # Évite l’overhead des unwinds, important pour wasm
+strip = "debuginfo" 

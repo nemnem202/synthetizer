@@ -118,6 +118,7 @@ impl WaveGenerator {
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
 pub struct Oscillator {
+    id: u8,
     wave_type: WaveType,
     attack_length: u64,
     decay_length: u64,
@@ -545,6 +546,7 @@ impl AudioProcessor {
                 0 => {
                     // add
                     self.oscillators.push(Oscillator {
+                        id: osc_index,
                         wave_type: WaveType::Sine,
                         attack_length: self.convert_ms_to_sample(500.0) as u64,
                         decay_length: self.convert_ms_to_sample(500.0) as u64,
@@ -562,13 +564,11 @@ impl AudioProcessor {
                 }
                 1 => {
                     // remove
-                    if (osc_index as usize) < self.oscillators.len() {
-                        self.oscillators.remove(osc_index as usize);
+                    if let Some(pos) = self.oscillators.iter().position(|osc| osc.id == osc_index) {
+                        self.oscillators.remove(pos);
                         console::log_1(&format!("Oscillateur {} supprimé", osc_index).into());
                     } else {
-                        console::log_1(
-                            &format!("Oscillateur {} n'a pas pu être supprimé", osc_index).into(),
-                        );
+                        console::log_1(&format!("Oscillateur {} introuvable", osc_index).into());
                     }
                 }
                 2 => {

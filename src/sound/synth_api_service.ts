@@ -159,7 +159,6 @@ export class SynthApi {
   public remove_oscillator(osc_index: number) {
     SynthApi.writeToOscQueue(1, osc_index, 0, 0); // 1 = remove
     console.log(`Oscillateur ${osc_index} supprimé`);
-    this.nmbr_of_oscillators--;
   }
 
   public update_oscillator(osc_index: number, key: OscKey, value: number) {

@@ -10,12 +10,12 @@ export class SynthComponent {
 
     const container = document.createElement("div");
     container.className = "synthcontainer";
-    document.body.appendChild(container);
 
     const btn = document.createElement("button");
     btn.addEventListener("click", () => this.create_oscillator(container));
     btn.innerText = "ajouter un oscillateur";
-    container.appendChild(btn);
+    document.body.appendChild(btn);
+    document.body.appendChild(container);
 
     this.listen_keys();
   }

@@ -38,7 +38,7 @@ export class MidiController {
     if (isNoteOn) {
       SynthApi.playNote({ value: note });
     } else if (status === 137 || (status === 153 && velocity === 0)) {
-      SynthApi.stopNote({ value: note });
+      SynthApi.stopNote(note);
     }
   }
 }
