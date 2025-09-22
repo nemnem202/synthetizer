@@ -21,11 +21,13 @@ self.onmessage = (e: MessageEvent) => {
     const sharedBuffer = e.data.sharedBuffer;
     const midi_queue_buffer = e.data.midi_queue_buffer;
     const ringBufferSize = e.data.ringBufferSize;
+    const osc_queue_buffer = e.data.osc_queue_buffer;
 
     if (
       !(sharedBuffer instanceof SharedArrayBuffer) ||
       typeof ringBufferSize !== "number" ||
-      !(midi_queue_buffer instanceof SharedArrayBuffer)
+      !(midi_queue_buffer instanceof SharedArrayBuffer) ||
+      !(osc_queue_buffer instanceof SharedArrayBuffer)
     ) {
       console.log(
         "error - invalid buffers:",
@@ -33,6 +35,8 @@ self.onmessage = (e: MessageEvent) => {
         sharedBuffer instanceof SharedArrayBuffer,
         "midi buffer valid:",
         midi_queue_buffer instanceof SharedArrayBuffer,
+        "osc buffer valid:",
+        osc_queue_buffer instanceof SharedArrayBuffer,
         "ring buffer size:",
         ringBufferSize
       );
@@ -42,7 +46,7 @@ self.onmessage = (e: MessageEvent) => {
     const indexes = new Int32Array(sharedBuffer, 0, 3);
     flag = indexes.subarray(0, 1);
 
-    init_audio_thread(sharedBuffer, ringBufferSize, midi_queue_buffer);
+    init_audio_thread(sharedBuffer, ringBufferSize, midi_queue_buffer, osc_queue_buffer);
 
     console.log("[RUST WORKER] initialisation done, processing loop...");
     start_audio_processing_loop();

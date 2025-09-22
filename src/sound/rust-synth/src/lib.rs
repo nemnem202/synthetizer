@@ -22,6 +22,8 @@ const MIDI_READ_INDEX: u32 = 1;
 const SAMPLE_RATE: f32 = 44100.0;
 const FREQ_A4: f32 = 440.0;
 
+const OSC_QUEUE_CAPACITY: u32 = 100;
+
 // =============================================================================
 // TYPES ET ENUMS
 // =============================================================================
@@ -295,15 +297,6 @@ impl NoteManager {
     }
 
     pub fn add_note(&mut self, dto: &NoteDTO, oscillators: &[Oscillator]) {
-        console::log_1(
-            &format!(
-                "Nouvelle note: valeur={}, fréquence={}",
-                dto.value,
-                WaveGenerator::midi_to_freq(dto.value)
-            )
-            .into(),
-        );
-
         if let Some(existing_note) = self.notes.iter_mut().find(|n| n.value == dto.value) {
             console::log_1(&"La note existe déjà".into());
             if existing_note.has_ended {
@@ -327,9 +320,7 @@ impl NoteManager {
         let initial_count = self.notes.len();
         self.notes.retain(|note| {
             let finished = note.is_finished();
-            if finished {
-                console::log_1(&format!("note {} supprimée", note.value).into());
-            }
+
             !finished
         });
     }
@@ -408,17 +399,20 @@ impl MidiBuffers {
             handler(&dto);
         }
 
-        if events_processed > 0 {
-            console::log_1(&format!("{} événements MIDI traités", events_processed).into());
-        }
-
         events_processed
     }
+}
+
+pub struct OscillatorBuffers {
+    write_idx: Int32Array,
+    read_idx: Int32Array,
+    queue: Uint8Array, // 8 octets par événement
 }
 
 pub struct SharedBuffers {
     audio: AudioBuffers,
     midi: MidiBuffers,
+    osc: OscillatorBuffers,
 }
 
 // =============================================================================
@@ -480,22 +474,22 @@ pub struct AudioProcessor {
 }
 
 impl AudioProcessor {
-    pub fn new(oscillators: Vec<Oscillator>) -> Self {
+    pub fn new() -> Self {
         Self {
             note_manager: NoteManager::new(),
-            oscillators,
+            oscillators: Vec::new(),
             global_sample_index: 0,
         }
     }
 
-    pub fn process_midi_events(&mut self, midi: &MidiBuffers) {
+    pub fn process_midi_events(&mut self, midi: &MidiBuffers) -> u32 {
         midi.process_all_events(|dto| {
             if dto.velocity > 0 {
                 self.note_manager.add_note(dto, &self.oscillators);
             } else {
                 self.note_manager.end_note(dto);
             }
-        });
+        })
     }
 
     pub fn generate_audio_chunk(&mut self, sample_count: i32) -> Vec<f32> {
@@ -507,6 +501,90 @@ impl AudioProcessor {
     pub fn fill_audio_buffer(&mut self, space: i32, ring_buffer_manager: &RingBufferManager) {
         let samples = self.generate_audio_chunk(space);
         ring_buffer_manager.write_samples(&samples);
+    }
+
+    pub fn process_osc_events(&mut self, osc_buffers: &OscillatorBuffers) {
+        let mut read_pos = Atomics::load(&osc_buffers.read_idx, 0).unwrap() as u32;
+        let write_pos = Atomics::load(&osc_buffers.write_idx, 0).unwrap() as u32;
+
+        if read_pos == write_pos {
+            return;
+        };
+
+        while read_pos != write_pos {
+            let offset = read_pos * 8; // OSC_EVENT_SIZE = 8
+            let event_type = osc_buffers.queue.get_index(offset); // OK
+            let osc_index = osc_buffers.queue.get_index(offset + 1); // <-- corrige ici
+            let key = osc_buffers.queue.get_index(offset + 2);
+
+            let value = {
+                let mut bytes = [0u8; 4];
+                for i in 0..4 {
+                    bytes[i] = osc_buffers.queue.get_index(offset + 2 + i as u32);
+                }
+                f32::from_le_bytes(bytes)
+            };
+
+            match event_type {
+                0 => {
+                    // add
+                    self.oscillators.push(Oscillator {
+                        wave_type: WaveType::Sine,
+                        attack_length: 100,
+                        decay_length: 100,
+                        sustain_gain: 0.5,
+                        release_length: 1000,
+                        frequency_shift: 1.0,
+                        delay_length: 0,
+                        phase_shift: 0.0,
+                    });
+                    console::log_1(
+                        &format!("Oscillateur créé à l'index {}", self.oscillators.len() - 1)
+                            .into(),
+                    );
+                }
+                1 => {
+                    // remove
+                    if (osc_index as usize) < self.oscillators.len() {
+                        self.oscillators.remove(osc_index as usize);
+                        console::log_1(&format!("Oscillateur {} supprimé", osc_index).into());
+                    } else {
+                        console::log_1(
+                            &format!("Oscillateur {} n'a pas pu être supprimé", osc_index).into(),
+                        );
+                    }
+                }
+                2 => {
+                    // update
+                    if let Some(osc) = self.oscillators.get_mut(osc_index as usize) {
+                        match key {
+                            1 => osc.attack_length = value as u64,
+                            2 => osc.release_length = value as u64,
+                            3 => osc.decay_length = value as u64,
+                            4 => osc.sustain_gain = value,
+                            5 => { /* gain */ }
+                            6 => osc.delay_length = value as u64,
+                            7 => osc.frequency_shift = value,
+                            8 => osc.phase_shift = value,
+                            9 => { /* wave_type à convertir si besoin */ }
+                            _ => {}
+                        }
+                        console::log_1(
+                            &format!(
+                                "Oscillateur {} mis à jour, key {}, value: {}",
+                                osc_index, key, value
+                            )
+                            .into(),
+                        );
+                    }
+                }
+                _ => {}
+            }
+
+            read_pos = (read_pos + 1) % OSC_QUEUE_CAPACITY;
+        }
+
+        Atomics::store(&osc_buffers.read_idx, 0, read_pos as i32).unwrap();
     }
 }
 
@@ -573,7 +651,9 @@ pub fn init_audio_thread(
     shared_audio_buffer: SharedArrayBuffer,
     ring_buffer_size: u32,
     midi_buffer: SharedArrayBuffer,
+    osc_buffer: SharedArrayBuffer,
 ) {
+    // -------- Audio --------
     let control_arr = Int32Array::new(&shared_audio_buffer);
     let flag = control_arr.subarray(FLAG_INDEX, FLAG_INDEX + 1);
     let read_idx = control_arr.subarray(READ_INDEX, READ_INDEX + 1);
@@ -584,12 +664,19 @@ pub fn init_audio_thread(
     let ring_buffer = Float32Array::new(&shared_audio_buffer)
         .subarray(audio_data_start_elem, ring_buffer_end_elem);
 
+    // -------- MIDI --------
     let midi_control_arr = Int32Array::new(&midi_buffer);
     let midi_write_idx = midi_control_arr.subarray(MIDI_WRITE_INDEX, MIDI_WRITE_INDEX + 1);
     let midi_read_idx = midi_control_arr.subarray(MIDI_READ_INDEX, MIDI_READ_INDEX + 1);
-
     let midi_queue = Uint8Array::new(&midi_buffer).subarray(8, midi_buffer.byte_length());
 
+    // -------- OSCILLATEURS --------
+    let osc_control_arr = Int32Array::new(&osc_buffer);
+    let osc_write_idx = osc_control_arr.subarray(0, 1);
+    let osc_read_idx = osc_control_arr.subarray(1, 2);
+    let osc_queue = Uint8Array::new(&osc_buffer).subarray(8, osc_buffer.byte_length());
+
+    // -------- SharedBuffers --------
     let shared_buffers = SharedBuffers {
         audio: AudioBuffers {
             flag,
@@ -602,20 +689,27 @@ pub fn init_audio_thread(
             read_idx: midi_read_idx,
             queue: midi_queue,
         },
+        osc: OscillatorBuffers {
+            write_idx: osc_write_idx,
+            read_idx: osc_read_idx,
+            queue: osc_queue,
+        },
     };
-
     // Initialisation du processeur audio avec les oscillateurs de test
-    let audio_processor = AudioProcessor::new(vec![
-        TEST_OSCILLATOR,
-        TEST_OSCILLATOR_2,
-        TEST_OSCILLATOR_3,
-        TEST_OSCILLATOR_4,
-    ]);
+    let audio_processor = AudioProcessor::new();
 
     SHARED_BUFFERS.with(|c| c.set(shared_buffers));
     AUDIO_PROCESSOR.with(|p| *p.borrow_mut() = Some(audio_processor));
 
     console::log_1(&"Buffers et processeur audio initialisés".into());
+}
+
+#[wasm_bindgen]
+pub fn start_audio_processing_loop() {
+    SHARED_BUFFERS.with(|cell| {
+        let buffers = cell.get().expect("SharedBuffers not initialized!");
+        audio_producer_loop(buffers);
+    });
 }
 
 fn audio_producer_loop(buffers: &SharedBuffers) {
@@ -633,7 +727,12 @@ fn audio_producer_loop(buffers: &SharedBuffers) {
         AUDIO_PROCESSOR.with(|processor_cell| {
             if let Some(ref mut processor) = *processor_cell.borrow_mut() {
                 // Traitement des événements MIDI
-                processor.process_midi_events(midi);
+                let events_processed = processor.process_midi_events(midi);
+
+                // Vérification si la MIDI queue et le tableau de notes sont vides
+                if processor.note_manager.notes.is_empty() && events_processed == 0 {
+                    processor.process_osc_events(&buffers.osc);
+                }
 
                 // Calcul de l'espace disponible dans le ring buffer
                 let r_idx = Atomics::load(read_idx, 0).unwrap();
@@ -651,12 +750,4 @@ fn audio_producer_loop(buffers: &SharedBuffers) {
         Atomics::store(flag, 0, 0).unwrap();
         Atomics::notify(flag, 0).unwrap();
     }
-}
-
-#[wasm_bindgen]
-pub fn start_audio_processing_loop() {
-    SHARED_BUFFERS.with(|cell| {
-        let buffers = cell.get().expect("SharedBuffers not initialized!");
-        audio_producer_loop(buffers);
-    });
 }

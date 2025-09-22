@@ -1,56 +1,86 @@
 import type { noteDTO } from "../types/note";
 import { AudioEngineOrchestrator } from "./audio_engine_orchestrator";
+import type { WaveType } from "./rust-synth/build/rust_synth";
 
-const MIDI_EVENT_SIZE = 4;
+// -------------------- Constantes MIDI --------------------
+const MIDI_EVENT_SIZE = 4; // 4 octets par évènement midi
 const MIDI_QUEUE_CAPACITY = 64;
 const MIDI_BUFFER_SIZE = MIDI_QUEUE_CAPACITY * MIDI_EVENT_SIZE;
 
+// -------------------- Constantes OSC ---------------------
+const OSC_EVENT_SIZE = 8; // 8 octets par évènement oscillateur
+const OSC_QUEUE_CAPACITY = 100;
+const OSC_BUFFER_SIZE = OSC_QUEUE_CAPACITY * OSC_EVENT_SIZE;
+
 type OscillatorEvent = {
   type: number; // add: 0 remove: 1, update: 2
-  wave_type?: "Sin" | "Square" | "Saw" | "Triangle";
-  gain?: number; // float32 btw 0 and 1
-  attack_length?: number; // u64
-  decay_length?: number; // u64
-  sustain_gain?: number; // f32 btw 0 and 1
-  release_length?: number; // u64
-  frequency_shift?: number; //f32
+  key: number;
+  value: number;
 };
+
+export enum OscKey {
+  NONE = 0,
+  ATTACK = 1,
+  RELEASE = 2,
+  DECAY = 3,
+  SUSTAIN = 4,
+  GAIN = 5,
+  DELAY = 6,
+  PITCH = 7,
+  PHASE = 8,
+  WAVEFORM = 9,
+}
 
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
 
+  // ---- Buffers MIDI ----
   private static midi_queue_buffer: SharedArrayBuffer;
   private static midi_queue_array: Uint8Array;
   private static midi_write_index: Int32Array;
+
+  // ---- Buffers OSC ----
+  private static osc_queue_buffer: SharedArrayBuffer;
+  private static osc_queue_array: Uint8Array;
+  private static osc_write_index: Int32Array;
+
+  private nmbr_of_oscillators = 0;
 
   constructor() {
     SynthApi.soundEngine = AudioEngineOrchestrator.getInstance();
 
     SynthApi.midi_queue_buffer = new SharedArrayBuffer(MIDI_BUFFER_SIZE);
 
-    SynthApi.set_midi_sharred_buffer();
+    // Initialisation des buffers
+    SynthApi.init_midi_queue();
+    SynthApi.init_osc_queue();
   }
 
-  private static set_midi_sharred_buffer() {
-    SynthApi.midi_queue_array = new Uint8Array(SynthApi.midi_queue_buffer);
-
-    const midi_control_size = 2 * Int32Array.BYTES_PER_ELEMENT;
-    SynthApi.midi_queue_buffer = new SharedArrayBuffer(midi_control_size + MIDI_BUFFER_SIZE);
+  private static init_midi_queue() {
+    const controlSize = 2 * Int32Array.BYTES_PER_ELEMENT;
+    SynthApi.midi_queue_buffer = new SharedArrayBuffer(controlSize + MIDI_BUFFER_SIZE);
 
     SynthApi.midi_write_index = new Int32Array(SynthApi.midi_queue_buffer, 0, 2);
+    SynthApi.midi_queue_array = new Uint8Array(SynthApi.midi_queue_buffer, controlSize);
+  }
 
-    SynthApi.midi_queue_array = new Uint8Array(SynthApi.midi_queue_buffer, midi_control_size);
+  private static init_osc_queue() {
+    const controlSize = 2 * Int32Array.BYTES_PER_ELEMENT;
+    SynthApi.osc_queue_buffer = new SharedArrayBuffer(controlSize + OSC_BUFFER_SIZE);
+
+    SynthApi.osc_write_index = new Int32Array(SynthApi.osc_queue_buffer, 0, 2);
+    SynthApi.osc_queue_array = new Uint8Array(SynthApi.osc_queue_buffer, controlSize);
   }
 
   async init() {
-    await SynthApi.soundEngine.init(SynthApi.midi_queue_buffer);
+    await SynthApi.soundEngine.init(SynthApi.midi_queue_buffer, SynthApi.osc_queue_buffer);
   }
 
-  static async playNote(note: noteDTO) {
+  static playNote(note: noteDTO) {
     SynthApi.writeToMidiQueue(1, note.value, note.velocity ?? 100);
   }
 
-  static async stopNote(note: noteDTO) {
+  static stopNote(note: noteDTO) {
     SynthApi.writeToMidiQueue(1, note.value, 0);
   }
 
@@ -74,6 +104,53 @@ export class SynthApi {
     Atomics.store(SynthApi.midi_write_index, 0, next_write_pos);
   }
 
+  // -------------------- OSC --------------------
+  private static writeToOscQueue(
+    event_type: number,
+    osc_index: number,
+    key: OscKey,
+    value: number
+  ) {
+    const writePos = Atomics.load(SynthApi.osc_write_index, 0);
+    const readPos = Atomics.load(SynthApi.osc_write_index, 1);
+
+    const nextWrite = (writePos + 1) % OSC_QUEUE_CAPACITY;
+    if (nextWrite === readPos) {
+      console.warn("Queue OSC pleine");
+      return;
+    }
+
+    const offset = writePos * OSC_EVENT_SIZE;
+    SynthApi.osc_queue_array[offset] = event_type & 0xff;
+    SynthApi.osc_queue_array[offset + 1] = osc_index & 0xff;
+    SynthApi.osc_queue_array[offset + 2] = key & 0xff;
+
+    const view = new DataView(
+      SynthApi.osc_queue_array.buffer,
+      SynthApi.osc_queue_array.byteOffset + offset + 3,
+      4
+    );
+    view.setFloat32(0, value, true);
+
+    Atomics.store(SynthApi.osc_write_index, 0, nextWrite);
+  }
+  public create_oscillator() {
+    const id = this.nmbr_of_oscillators;
+
+    SynthApi.writeToOscQueue(0, id, 0, 0); // 0 = add, key et value ignorés
+    console.log(`Oscillateur ${id} créé`);
+    this.nmbr_of_oscillators++;
+    return id;
+  }
+
+  public remove_oscillator(osc_index: number) {
+    SynthApi.writeToOscQueue(1, osc_index, 0, 0); // 1 = remove
+    console.log(`Oscillateur ${osc_index} supprimé`);
+    this.nmbr_of_oscillators--;
+  }
+  public update_oscillator(osc_index: number, key: OscKey, value: number) {
+    SynthApi.writeToOscQueue(2, osc_index, key, value); // 2 = update
+  }
   public destroy() {
     SynthApi.soundEngine.release();
   }

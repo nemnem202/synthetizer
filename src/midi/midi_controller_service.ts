@@ -33,8 +33,6 @@ export class MidiController {
     const note = ev.data[1];
     const velocity = ev.data[2];
 
-    console.log(ev);
-
     const isNoteOn = status === 153 && velocity > 0;
 
     if (isNoteOn) {
