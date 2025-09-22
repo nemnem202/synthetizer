@@ -83,11 +83,7 @@ export class SynthComponent {
     );
 
     frequency.addEventListener("change", () =>
-      this.api.update_oscillator(
-        INDEX,
-        OscKey.PITCH,
-        SynthApi.convert_semitone_to_frequency_shift(Number(frequency.value))
-      )
+      this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency.value))
     );
 
     phase.addEventListener("change", () =>
