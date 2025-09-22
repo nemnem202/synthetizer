@@ -25,6 +25,8 @@ docker run -p 4173:80 rust-wasm-synth
 
 L'application sera ensuite accessible via : [http://localhost:4173/](http://localhost:4173/)
 
+- Version en ligne : [https://synthetizer-production.up.railway.app/](https://synthetizer-production.up.railway.app/)
+
 ## Usage
 
 1. Cliquez sur le bouton **"Commencer"** pour créer vos premières sources sonores.
