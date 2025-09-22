@@ -65,8 +65,11 @@ export class AudioEngineOrchestrator {
 
       await this.audioCtx.resume();
 
-      const moduleUrl = new URL("./audio_worket_manager.ts", import.meta.url);
-      await this.audioCtx.audioWorklet.addModule(moduleUrl.href);
+      const workletPath = "/audio_worket_manager.js";
+      console.log("[AUDIO ENGINE] Loading AudioWorklet module from:", workletPath);
+
+      await this.audioCtx.audioWorklet.addModule(workletPath);
+      console.log("[AUDIO ENGINE] AudioWorklet module successfully loaded");
 
       this.workletNode = new AudioWorkletNode(this.audioCtx, "sound-processor", {
         outputChannelCount: [2],
