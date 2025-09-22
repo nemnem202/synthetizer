@@ -1,6 +1,5 @@
 import type { noteDTO } from "../types/note";
 import { AudioEngineOrchestrator } from "./audio_engine_orchestrator";
-import type { WaveType } from "./rust-synth/build/rust_synth";
 
 // -------------------- Constantes MIDI --------------------
 const MIDI_EVENT_SIZE = 4; // 4 octets par évènement midi
@@ -40,6 +39,7 @@ export class SynthApi {
   private static midi_write_index: Int32Array;
 
   // ---- Buffers OSC ----
+
   private static osc_queue_buffer: SharedArrayBuffer;
   private static osc_queue_array: Uint8Array;
   private static osc_write_index: Int32Array;
@@ -80,8 +80,8 @@ export class SynthApi {
     SynthApi.writeToMidiQueue(1, note.value, note.velocity ?? 100);
   }
 
-  static stopNote(note: noteDTO) {
-    SynthApi.writeToMidiQueue(1, note.value, 0);
+  static stopNote(value: number) {
+    SynthApi.writeToMidiQueue(1, value, 0);
   }
 
   private static writeToMidiQueue(event_type: number, note: number, velocity: number) {
@@ -105,12 +105,24 @@ export class SynthApi {
   }
 
   // -------------------- OSC --------------------
+
   private static writeToOscQueue(
     event_type: number,
     osc_index: number,
     key: OscKey,
     value: number
   ) {
+    if (key === OscKey.WAVEFORM) {
+    } else if (key === OscKey.PITCH) {
+      value = this.convert_semitone_to_frequency_shift(value);
+    } else if (
+      key === OscKey.ATTACK ||
+      key === OscKey.DECAY ||
+      key === OscKey.RELEASE ||
+      key === OscKey.DELAY
+    ) {
+      value = this.convert_ms_to_sample(value);
+    }
     const writePos = Atomics.load(SynthApi.osc_write_index, 0);
     const readPos = Atomics.load(SynthApi.osc_write_index, 1);
 
@@ -134,6 +146,7 @@ export class SynthApi {
 
     Atomics.store(SynthApi.osc_write_index, 0, nextWrite);
   }
+
   public create_oscillator() {
     const id = this.nmbr_of_oscillators;
 
@@ -148,9 +161,21 @@ export class SynthApi {
     console.log(`Oscillateur ${osc_index} supprimé`);
     this.nmbr_of_oscillators--;
   }
+
   public update_oscillator(osc_index: number, key: OscKey, value: number) {
     SynthApi.writeToOscQueue(2, osc_index, key, value); // 2 = update
   }
+
+  private static convert_ms_to_sample(ms: number) {
+    return Math.floor((ms / 1000) * 44100);
+  }
+
+  private static convert_sample_to_ms() {}
+
+  private static convert_semitone_to_frequency_shift(semitone: number) {
+    return Math.pow(2, semitone / 12);
+  }
+
   public destroy() {
     SynthApi.soundEngine.release();
   }

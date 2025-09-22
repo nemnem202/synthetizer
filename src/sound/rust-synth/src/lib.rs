@@ -56,6 +56,20 @@ pub enum WaveType {
     Triangle,
 }
 
+impl TryFrom<u8> for WaveType {
+    type Error = &'static str;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(WaveType::Sine),
+            1 => Ok(WaveType::Square),
+            2 => Ok(WaveType::Saw),
+            3 => Ok(WaveType::Triangle),
+            _ => Err("Valeur de WaveType invalide"),
+        }
+    }
+}
+
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
 pub struct NoteDTO {
@@ -112,6 +126,7 @@ pub struct Oscillator {
     frequency_shift: f32,
     phase_shift: f32,
     delay_length: u64,
+    gain: f32,
 }
 
 impl Oscillator {
@@ -161,6 +176,7 @@ impl Oscillator {
 
         let mut value = WaveGenerator::generate_sample(state.current_phase, self.wave_type)
             * note_velocity as f32
+            * self.gain
             / 127.0;
 
         self.apply_adsr(state, note_has_ended, &mut value);
@@ -520,7 +536,7 @@ impl AudioProcessor {
             let value = {
                 let mut bytes = [0u8; 4];
                 for i in 0..4 {
-                    bytes[i] = osc_buffers.queue.get_index(offset + 2 + i as u32);
+                    bytes[i] = osc_buffers.queue.get_index(offset + 3 + i as u32);
                 }
                 f32::from_le_bytes(bytes)
             };
@@ -530,13 +546,14 @@ impl AudioProcessor {
                     // add
                     self.oscillators.push(Oscillator {
                         wave_type: WaveType::Sine,
-                        attack_length: 100,
-                        decay_length: 100,
+                        attack_length: self.convert_ms_to_sample(500.0) as u64,
+                        decay_length: self.convert_ms_to_sample(500.0) as u64,
                         sustain_gain: 0.5,
-                        release_length: 1000,
+                        release_length: self.convert_ms_to_sample(500.0) as u64,
                         frequency_shift: 1.0,
-                        delay_length: 0,
+                        delay_length: self.convert_ms_to_sample(0.0) as u64,
                         phase_shift: 0.0,
+                        gain: 0.5,
                     });
                     console::log_1(
                         &format!("Oscillateur créé à l'index {}", self.oscillators.len() - 1)
@@ -561,18 +578,22 @@ impl AudioProcessor {
                             1 => osc.attack_length = value as u64,
                             2 => osc.release_length = value as u64,
                             3 => osc.decay_length = value as u64,
-                            4 => osc.sustain_gain = value,
-                            5 => { /* gain */ }
+                            4 => osc.sustain_gain = value * 0.1,
+                            5 => osc.gain = value * 0.1,
                             6 => osc.delay_length = value as u64,
                             7 => osc.frequency_shift = value,
                             8 => osc.phase_shift = value,
-                            9 => { /* wave_type à convertir si besoin */ }
+                            9 => {
+                                if let Ok(wt) = WaveType::try_from(value as u8) {
+                                    osc.wave_type = wt;
+                                }
+                            }
                             _ => {}
                         }
                         console::log_1(
                             &format!(
                                 "Oscillateur {} mis à jour, key {}, value: {}",
-                                osc_index, key, value
+                                osc_index, key, value as u64
                             )
                             .into(),
                         );
@@ -586,55 +607,15 @@ impl AudioProcessor {
 
         Atomics::store(&osc_buffers.read_idx, 0, read_pos as i32).unwrap();
     }
+
+    pub fn convert_ms_to_sample(&self, ms: f32) -> f32 {
+        (ms / 1000.0 * 44100.0).floor()
+    }
 }
 
 // =============================================================================
 // VARIABLES GLOBALES ET CONFIGURATIONS
 // =============================================================================
-
-static TEST_OSCILLATOR: Oscillator = Oscillator {
-    wave_type: WaveType::Sine,
-    attack_length: 100,
-    decay_length: 30000,
-    sustain_gain: 0.5,
-    release_length: 1000,
-    frequency_shift: 2.0,
-    delay_length: 0,
-    phase_shift: 0.0,
-};
-
-static TEST_OSCILLATOR_2: Oscillator = Oscillator {
-    wave_type: WaveType::Sine,
-    attack_length: 100,
-    decay_length: 30000,
-    sustain_gain: 0.5,
-    release_length: 1000,
-    frequency_shift: 2.0,
-    delay_length: 0,
-    phase_shift: 0.0,
-};
-
-static TEST_OSCILLATOR_3: Oscillator = Oscillator {
-    wave_type: WaveType::Saw,
-    attack_length: 1000,
-    decay_length: 5000,
-    sustain_gain: 0.1,
-    release_length: 1000,
-    frequency_shift: 0.25,
-    delay_length: 0,
-    phase_shift: 0.0,
-};
-
-static TEST_OSCILLATOR_4: Oscillator = Oscillator {
-    wave_type: WaveType::Square,
-    attack_length: 100,
-    decay_length: 100,
-    sustain_gain: 0.1,
-    release_length: 1000,
-    frequency_shift: 4.0,
-    delay_length: 0,
-    phase_shift: 0.0,
-};
 
 thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();

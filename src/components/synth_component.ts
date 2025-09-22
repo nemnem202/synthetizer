@@ -1,5 +1,7 @@
 import type { WaveType } from "../sound/rust-synth/build/rust_synth";
-import { OscKey, type SynthApi } from "../sound/synth_api_service";
+import { OscKey, SynthApi } from "../sound/synth_api_service";
+
+const keys = ["q", "z", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j"];
 
 export class SynthComponent {
   api: SynthApi;
@@ -14,6 +16,8 @@ export class SynthComponent {
     btn.addEventListener("click", () => this.create_oscillator(container));
     btn.innerText = "ajouter un oscillateur";
     container.appendChild(btn);
+
+    this.listen_keys();
   }
 
   private create_oscillator(main_container: HTMLElement) {
@@ -31,16 +35,16 @@ export class SynthComponent {
     const waveformSelect = document.createElement("select");
     ["sine", "square", "sawtooth", "triangle"].forEach((wave, index) => {
       const option = document.createElement("option");
-      option.value = "index";
+      option.value = `${index}`;
       option.text = wave;
       waveformSelect.appendChild(option);
     });
 
     waveformSelect.addEventListener("change", (e) => {
       this.api.update_oscillator(
-        parseInt((e.target as HTMLSelectElement).value) as WaveType,
+        INDEX,
         OscKey.WAVEFORM,
-        INDEX
+        parseInt(waveformSelect.value) as WaveType
       );
     });
 
@@ -79,7 +83,11 @@ export class SynthComponent {
     );
 
     frequency.addEventListener("change", () =>
-      this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency.value))
+      this.api.update_oscillator(
+        INDEX,
+        OscKey.PITCH,
+        SynthApi.convert_semitone_to_frequency_shift(Number(frequency.value))
+      )
     );
 
     phase.addEventListener("change", () =>
@@ -124,12 +132,33 @@ export class SynthComponent {
     const label = document.createElement("label");
     label.textContent = `${labelText} ${input.value}`;
 
-    wrapper.appendChild(label);
+    input.addEventListener("input", () => (label.textContent = `${labelText} ${input.value}`));
+
     wrapper.appendChild(input);
+    wrapper.appendChild(label);
 
     container.appendChild(wrapper);
 
     // Je retourne l’input (plus simple pour brancher les events ensuite)
     return input;
   };
+
+  private listen_keys() {
+    let playedkeys: string[] = [];
+    window.addEventListener("keydown", (e) => {
+      const index = keys.indexOf(e.key.toLowerCase());
+
+      if (index === -1 || playedkeys.includes(e.key.toLowerCase())) return;
+      playedkeys.push(e.key.toLowerCase());
+      SynthApi.playNote({ value: 72 + index, velocity: 50 });
+    });
+
+    window.addEventListener("keyup", (e) => {
+      const index = keys.indexOf(e.key.toLowerCase());
+
+      if (index === -1) return;
+      playedkeys = playedkeys.filter((k) => k !== e.key.toLowerCase());
+      SynthApi.stopNote(72 + index);
+    });
+  }
 }
