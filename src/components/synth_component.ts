@@ -58,6 +58,7 @@ export class SynthComponent {
     const release = this.create_slider(container, "Release (ms)", 0, 10000, 1, 500);
     const delay = this.create_slider(container, "Delay (ms)", 0, 10000, 1, 0);
     const frequency = this.create_slider(container, "Shift (semitones)", -36, 36, 1, 0);
+    const frequency_full = this.create_slider(container, "Shift (full range)", -12, 12, 0.1, 0);
     const phase = this.create_slider(container, "Phase", 0.05, 0.95, 0.05, 0);
     const gain = this.create_slider(container, "Gain (%)", 0, 100, 1, 50);
     const pan = this.create_slider(container, "Pan (%)", -1, 1, 0.1, 0);
@@ -85,6 +86,10 @@ export class SynthComponent {
 
     frequency.addEventListener("change", () =>
       this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency.value))
+    );
+
+    frequency_full.addEventListener("change", () =>
+      this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency_full.value))
     );
 
     phase.addEventListener("change", () =>
