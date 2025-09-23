@@ -60,6 +60,7 @@ export class SynthComponent {
     const frequency = this.create_slider(container, "Shift (semitones)", -36, 36, 1, 0);
     const phase = this.create_slider(container, "Phase", 0.05, 0.95, 0.05, 0);
     const gain = this.create_slider(container, "Gain (%)", 0, 100, 1, 50);
+    const pan = this.create_slider(container, "Pan (%)", -1, 1, 0.1, 0);
 
     // --- Écouteurs branchés ici ---
     attack.addEventListener("change", () =>
@@ -93,6 +94,10 @@ export class SynthComponent {
     gain.addEventListener("change", () =>
       this.api.update_oscillator(INDEX, OscKey.GAIN, Number(gain.value))
     );
+
+    pan.addEventListener("change", () => {
+      this.api.update_oscillator(INDEX, OscKey.PAN, Number(pan.value));
+    });
 
     // Bouton suppression
     const delBtn = document.createElement("button");

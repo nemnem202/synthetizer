@@ -30,7 +30,7 @@ class AudioWorkletManager extends AudioWorkletProcessor {
   process(inputs: any, outputs: any, parameters: any) {
     const output = outputs[0];
     const left = output[0];
-    const right = output[1];
+    const right = output[1] ?? output[0];
 
     let rIndex = Atomics.load(this.readIndex, 0);
     const wIndexNow = Atomics.load(this.writeIndex, 0);
@@ -43,11 +43,21 @@ class AudioWorkletManager extends AudioWorkletProcessor {
         right[i] = 0;
         underflow = true;
       } else {
-        const sample = this.ringBuffer[rIndex];
-        left[i] = sample;
-        right[i] = sample;
+        const sampleL = this.ringBuffer[rIndex]; // gauche dans ton buffer
+        const sampleR = this.ringBuffer[rIndex + 1]; // droite dans ton buffer
 
-        rIndex = (rIndex + 1) % this.ringBufferSize;
+        // 👉 Forcer tout sur le canal gauche :
+        // left[i] = sampleL;
+        // right[i] = 0;
+
+        left[i] = sampleL;
+        right[i] = sampleR;
+
+        // ou si tu veux du mono pan-left :
+        // left[i] = (sampleL + sampleR) * 0.5;
+        // right[i] = 0;
+
+        rIndex = (rIndex + 2) % this.ringBufferSize;
       }
     }
 
@@ -55,6 +65,7 @@ class AudioWorkletManager extends AudioWorkletProcessor {
 
     if (underflow) {
       this.port.postMessage({ type: "log", message: "[AUDIO WORKLET] no inputs (underflow)" });
+      this.port.postMessage({ type: "log", message: "rbs" + this.ringBufferSize });
     }
 
     const wIndex = Atomics.load(this.writeIndex, 0);

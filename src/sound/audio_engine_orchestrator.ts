@@ -1,6 +1,7 @@
 const BUFFER_SIZE = 512;
 const BUFFER_QUEUE_LENGTH = 2;
-const RING_BUFFER_SIZE = BUFFER_SIZE * BUFFER_QUEUE_LENGTH;
+const AUDIO_CHANNELS = 2;
+const RING_BUFFER_SIZE = BUFFER_SIZE * BUFFER_QUEUE_LENGTH * AUDIO_CHANNELS;
 
 export class AudioEngineOrchestrator {
   private static instance: AudioEngineOrchestrator;

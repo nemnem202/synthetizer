@@ -1,4 +1,4 @@
-use js_sys::{Atomics, Float32Array, Int32Array, SharedArrayBuffer, Uint8Array};
+use js_sys::{Array, Atomics, Float32Array, Int32Array, SharedArrayBuffer, Uint8Array};
 use once_cell::unsync::OnceCell;
 use std::cell::RefCell;
 use std::f32::consts::TAU;
@@ -128,6 +128,8 @@ pub struct Oscillator {
     phase_shift: f32,
     delay_length: u64,
     gain: f32,
+    gainL: f32,
+    gainR: f32,
 }
 
 impl Oscillator {
@@ -168,9 +170,9 @@ impl Oscillator {
         note_velocity: u8,
         state: &mut NoteOscState,
         note_has_ended: bool,
-    ) -> f32 {
+    ) -> (f32, f32) {
         if state.finished {
-            return 0.0;
+            return (0.0, 0.0);
         }
 
         let freq: f32 = WaveGenerator::midi_to_freq(note_value) * self.frequency_shift;
@@ -191,7 +193,10 @@ impl Oscillator {
             state.end_sample_index += 1;
         }
 
-        value
+        let left = value * self.gainL;
+        let right = value * self.gainR;
+
+        (left, right)
     }
 }
 
@@ -282,21 +287,24 @@ impl Note {
         self.osc_states.iter().all(|s| s.finished)
     }
 
-    pub fn generate_sample(&mut self, oscillators: &[Oscillator]) -> f32 {
+    pub fn generate_sample(&mut self, oscillators: &[Oscillator]) -> (f32, f32) {
         if self.to_remove {
-            return 0.0;
+            return (0.0, 0.0);
         }
 
-        let mut note_sum = 0.0;
+        let mut note_sum_l = 0.0;
+        let mut note_sum_r = 0.0;
 
         for (osc_index, oscillator) in oscillators.iter().enumerate() {
             if let Some(state) = self.osc_states.get_mut(osc_index) {
-                note_sum +=
+                let (l, r) =
                     oscillator.generate_sample(self.value, self.velocity, state, self.has_ended);
+                note_sum_l += l;
+                note_sum_r += r;
             }
         }
 
-        note_sum
+        (note_sum_l, note_sum_r)
     }
 }
 
@@ -315,7 +323,7 @@ impl NoteManager {
 
     pub fn add_note(&mut self, dto: &NoteDTO, oscillators: &[Oscillator]) {
         if let Some(existing_note) = self.notes.iter_mut().find(|n| n.value == dto.value) {
-            console::log_1(&"La note existe déjà".into());
+            console::log_1(&"La note existe déjà OEOE".into());
             if existing_note.has_ended {
                 existing_note.restart(oscillators);
             }
@@ -343,23 +351,33 @@ impl NoteManager {
     }
 
     pub fn generate_samples(&mut self, sample_count: i32, oscillators: &[Oscillator]) -> Vec<f32> {
+        // sample_count inclut déjà les 2 canaux
         let mut samples = Vec::with_capacity(sample_count as usize);
 
-        for _ in 0..sample_count {
+        // nb de frames stéréo = moitié de sample_count
+        let frame_count = sample_count / 2;
+
+        for _ in 0..frame_count {
             if self.notes.is_empty() {
+                // silence stéréo
+                samples.push(0.0);
                 samples.push(0.0);
                 continue;
             }
 
-            let mut mixed_sample = 0.0;
+            let mut mixed_l = 0.0;
+            let mut mixed_r = 0.0;
+
             for note in self.notes.iter_mut() {
-                mixed_sample += note.generate_sample(oscillators);
+                let (l, r) = note.generate_sample(oscillators);
+                mixed_l += l;
+                mixed_r += r;
             }
 
-            samples.push(mixed_sample * 0.1); // Volume global
+            samples.push(mixed_l * 0.1);
+            samples.push(mixed_r * 0.1);
         }
 
-        // Nettoyage des notes terminées
         self.cleanup_finished_notes();
         samples
     }
@@ -556,6 +574,8 @@ impl AudioProcessor {
                         delay_length: self.convert_ms_to_sample(0.0) as u64,
                         phase_shift: 0.0,
                         gain: 0.5,
+                        gainL: 1.0,
+                        gainR: 1.0,
                     });
                     console::log_1(
                         &format!("Oscillateur créé à l'index {}", self.oscillators.len() - 1)
@@ -588,6 +608,11 @@ impl AudioProcessor {
                                     osc.wave_type = wt;
                                 }
                             }
+                            10 => {
+                                osc.gainL = (1.0 - value) / 2.0;
+                                osc.gainR = (1.0 + value) / 2.0
+                            }
+
                             _ => {}
                         }
                         console::log_1(

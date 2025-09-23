@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "watch:wasm": "cd src/sound/rust-synth && cargo watch -w src -s \"wasm-pack build --target web --out-dir build --release\"",
-    "dev": "concurrently \"npm run watch:wasm\" \"vite\"",
+    "watch:worklet": "tsc -p audioworklet.tsconfig.json --watch",
+    "dev": "concurrently \"npm run watch:wasm\" \"npm run watch:worklet\" \"vite\"",
     "build": "cd src/sound/rust-synth && wasm-pack build --target web --out-dir build --release && tsc && npx vite build",
     "build:tsonly": "npx vite build",
     "preview": "vite preview --host --port 4173"

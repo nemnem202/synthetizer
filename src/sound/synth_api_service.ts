@@ -28,6 +28,7 @@ export enum OscKey {
   PITCH = 7,
   PHASE = 8,
   WAVEFORM = 9,
+  PAN = 10,
 }
 
 export class SynthApi {
