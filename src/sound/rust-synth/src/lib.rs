@@ -735,10 +735,11 @@ fn audio_producer_loop(buffers: &SharedBuffers) {
                 // Traitement des événements MIDI
                 let events_processed = processor.process_midi_events(midi);
 
+                processor.process_osc_events(&buffers.osc);
                 // Vérification si la MIDI queue et le tableau de notes sont vides
-                if processor.note_manager.notes.is_empty() && events_processed == 0 {
-                    processor.process_osc_events(&buffers.osc);
-                }
+                // if processor.note_manager.notes.is_empty() && events_processed == 0 {
+                //     processor.process_osc_events(&buffers.osc);
+                // }
 
                 // Calcul de l'espace disponible dans le ring buffer
                 let r_idx = Atomics::load(read_idx, 0).unwrap();
