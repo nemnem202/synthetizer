@@ -40,7 +40,7 @@ export class SynthComponent {
       waveformSelect.appendChild(option);
     });
 
-    waveformSelect.addEventListener("change", (e) => {
+    waveformSelect.addEventListener("input", (e) => {
       this.api.update_oscillator(
         INDEX,
         OscKey.WAVEFORM,
@@ -64,43 +64,43 @@ export class SynthComponent {
     const pan = this.create_slider(container, "Pan (%)", -1, 1, 0.1, 0);
 
     // --- Écouteurs branchés ici ---
-    attack.addEventListener("change", () =>
+    attack.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.ATTACK, Number(attack.value))
     );
 
-    decay.addEventListener("change", () =>
+    decay.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.DECAY, Number(decay.value))
     );
 
-    sustain.addEventListener("change", () =>
+    sustain.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.SUSTAIN, Number(sustain.value))
     );
 
-    release.addEventListener("change", () =>
+    release.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.RELEASE, Number(release.value))
     );
 
-    delay.addEventListener("change", () =>
+    delay.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.DELAY, Number(delay.value))
     );
 
-    frequency.addEventListener("change", () =>
+    frequency.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency.value))
     );
 
-    frequency_full.addEventListener("change", () =>
+    frequency_full.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency_full.value))
     );
 
-    phase.addEventListener("change", () =>
+    phase.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.PHASE, Number(phase.value))
     );
 
-    gain.addEventListener("change", () =>
+    gain.addEventListener("input", () =>
       this.api.update_oscillator(INDEX, OscKey.GAIN, Number(gain.value))
     );
 
-    pan.addEventListener("change", () => {
+    pan.addEventListener("input", () => {
       this.api.update_oscillator(INDEX, OscKey.PAN, Number(pan.value));
     });
 
