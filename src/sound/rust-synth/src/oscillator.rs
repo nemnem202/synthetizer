@@ -23,8 +23,8 @@ pub struct Oscillator {
     pub phase_shift: f32,
     pub delay_length: u64,
     pub gain: f32,
-    pub gainL: f32,
-    pub gainR: f32,
+    pub gain_l: f32,
+    pub gain_r: f32,
 }
 
 impl Oscillator {
@@ -36,8 +36,8 @@ impl Oscillator {
                 return;
             }
 
-            *value *= ((self.release_length as f32 - state.end_sample_index as f32)
-                / self.release_length as f32);
+            *value *= (self.release_length as f32 - state.end_sample_index as f32)
+                / self.release_length as f32;
         }
 
         if state.start_sample_index <= self.delay_length {
@@ -88,8 +88,8 @@ impl Oscillator {
             state.end_sample_index += 1;
         }
 
-        let left = value * self.gainL;
-        let right = value * self.gainR;
+        let left = value * self.gain_l;
+        let right = value * self.gain_r;
 
         (left, right)
     }

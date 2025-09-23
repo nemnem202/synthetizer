@@ -84,8 +84,8 @@ impl AudioProcessor {
                         delay_length: ToolKit::convert_ms_to_sample(0.0) as u64,
                         phase_shift: 0.0,
                         gain: 0.5,
-                        gainL: 1.0,
-                        gainR: 1.0,
+                        gain_l: 1.0,
+                        gain_r: 1.0,
                     });
                     console::log_1(
                         &format!("Oscillateur créé à l'index {}", self.oscillators.len() - 1)
@@ -119,8 +119,8 @@ impl AudioProcessor {
                                 }
                             }
                             10 => {
-                                osc.gainL = (1.0 - value) / 2.0;
-                                osc.gainR = (1.0 + value) / 2.0
+                                osc.gain_l = (1.0 - value) / 2.0;
+                                osc.gain_r = (1.0 + value) / 2.0
                             }
 
                             _ => {}

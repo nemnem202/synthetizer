@@ -112,7 +112,7 @@ pub fn init_audio_thread(
         },
     };
 
-    SHARED_BUFFERS.with(|cell| cell.set(shared_buffers));
+    _ = SHARED_BUFFERS.with(|cell| cell.set(shared_buffers));
     // Initialisation du processeur audio avec les oscillateurs de test
     let audio_processor = AudioProcessor::new();
 
@@ -144,7 +144,7 @@ fn audio_producer_loop(buffers: &SharedBuffers) {
         AUDIO_PROCESSOR.with(|processor_cell| {
             if let Some(ref mut processor) = *processor_cell.borrow_mut() {
                 // Traitement des événements MIDI
-                let events_processed = processor.process_midi_events(midi);
+                processor.process_midi_events(midi);
 
                 processor.process_osc_events(&buffers.osc);
                 // Vérification si la MIDI queue et le tableau de notes sont vides

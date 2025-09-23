@@ -38,7 +38,6 @@ impl NoteManager {
     }
 
     pub fn cleanup_finished_notes(&mut self) {
-        let initial_count = self.notes.len();
         self.notes.retain(|note| {
             let finished = note.is_finished();
 
