@@ -27,6 +27,22 @@ const FREQ_A4: f32 = 440.0;
 const OSC_QUEUE_CAPACITY: u32 = 100;
 
 // =============================================================================
+// Toolkit
+// =============================================================================
+
+pub struct ToolKit;
+
+impl ToolKit {
+    pub fn midi_to_freq(note: u8) -> f32 {
+        FREQ_A4 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
+    }
+
+    pub fn convert_ms_to_sample(ms: f32) -> usize {
+        (ms / 1000.0 * SAMPLE_RATE).floor() as usize
+    }
+}
+
+// =============================================================================
 // TYPES ET ENUMS
 // =============================================================================
 
@@ -86,10 +102,6 @@ pub struct NoteDTO {
 pub struct WaveGenerator;
 
 impl WaveGenerator {
-    pub fn midi_to_freq(note: u8) -> f32 {
-        FREQ_A4 * 2.0f32.powf((note as f32 - 69.0) / 12.0)
-    }
-
     pub fn generate_sample(phase: f32, wave_type: WaveType) -> f32 {
         match wave_type {
             WaveType::Sine => (phase * TAU).sin(),
@@ -177,7 +189,7 @@ impl Oscillator {
             return (0.0, 0.0);
         }
 
-        let freq: f32 = WaveGenerator::midi_to_freq(note_value) * self.frequency_shift;
+        let freq: f32 = ToolKit::midi_to_freq(note_value) * self.frequency_shift;
 
         let mut value = WaveGenerator::generate_sample(state.current_phase, self.wave_type)
             * note_velocity as f32
@@ -262,19 +274,24 @@ struct Echo {
     pub delay: usize,
     pub feedback: f32,
     pub memory: MemoryBuffer,
+    pub r_delay_offset: usize,
+    pub l_delay_offset: usize,
 }
 
 impl Echo {
-    pub fn new(delay: usize, feedback: f32) -> Self {
+    pub fn new(delay: usize, feedback: f32, r_delay_offset: usize, l_delay_offset: usize) -> Self {
         Echo {
             delay: delay,
             feedback: feedback.max(0.0).min(1.0),
             memory: MemoryBuffer::new(44100, 10.0),
+            r_delay_offset: r_delay_offset,
+            l_delay_offset: l_delay_offset,
         }
     }
 
     pub fn process(&mut self, input_l: &mut f32, input_r: &mut f32) {
-        let (l, r) = self.memory.read(self.delay);
+        let l = self.memory.read_left(self.delay + self.l_delay_offset * 2);
+        let r = self.memory.read_right(self.delay + self.r_delay_offset * 2);
         *input_l += l * self.feedback;
         *input_r += r * self.feedback;
         self.memory.write(*input_l, *input_r);
@@ -567,18 +584,25 @@ impl MemoryBuffer {
         }
     }
 
-    /// Écrit un sample dans le buffer
     pub fn write(&mut self, sample_l: f32, sample_r: f32) {
         self.buffer[self.write_index] = sample_l;
         self.buffer[self.write_index + 1] = sample_r;
         self.write_index = (self.write_index + 2) % self.size;
     }
 
-    /// Lit un sample avec un délai en nombre d’échantillons
-    pub fn read(&self, delay_samples: usize) -> (f32, f32) {
-        // on calcule la position de lecture "dans le passé"
+    pub fn read_mono(&self, delay_samples: usize) -> (f32, f32) {
         let read_index = (self.size + self.write_index - delay_samples) % self.size;
         (self.buffer[read_index], self.buffer[read_index + 1])
+    }
+
+    pub fn read_left(&self, delay_samples: usize) -> f32 {
+        let read_index = (self.size + self.write_index - delay_samples) % self.size;
+        self.buffer[read_index]
+    }
+
+    pub fn read_right(&self, delay_samples: usize) -> f32 {
+        let read_index = (self.size + self.write_index - delay_samples) % self.size;
+        self.buffer[read_index + 1]
     }
 }
 // =============================================================================
@@ -697,12 +721,12 @@ impl AudioProcessor {
                     self.oscillators.push(Oscillator {
                         id: osc_index,
                         wave_type: WaveType::Sine,
-                        attack_length: self.convert_ms_to_sample(500.0) as u64,
-                        decay_length: self.convert_ms_to_sample(500.0) as u64,
+                        attack_length: ToolKit::convert_ms_to_sample(500.0) as u64,
+                        decay_length: ToolKit::convert_ms_to_sample(500.0) as u64,
                         sustain_gain: 0.5,
-                        release_length: self.convert_ms_to_sample(500.0) as u64,
+                        release_length: ToolKit::convert_ms_to_sample(500.0) as u64,
                         frequency_shift: 1.0,
-                        delay_length: self.convert_ms_to_sample(0.0) as u64,
+                        delay_length: ToolKit::convert_ms_to_sample(0.0) as u64,
                         phase_shift: 0.0,
                         gain: 0.5,
                         gainL: 1.0,
@@ -763,10 +787,6 @@ impl AudioProcessor {
 
         Atomics::store(&osc_buffers.read_idx, 0, read_pos as i32).unwrap();
     }
-
-    pub fn convert_ms_to_sample(&self, ms: f32) -> f32 {
-        (ms / 1000.0 * SAMPLE_RATE).floor()
-    }
 }
 
 // =============================================================================
@@ -794,7 +814,7 @@ thread_local! {
     // });
 
     static TEST_DELAY: Lazy<Mutex<Echo>> = Lazy::new(|| {
-        let  echo = Echo::new((44100.0 * 0.3 * 2.0) as usize, 0.5);
+        let  echo = Echo::new(ToolKit::convert_ms_to_sample(300.0), 0.5, ToolKit::convert_ms_to_sample(10.0), ToolKit::convert_ms_to_sample(50.0));
         Mutex::new(echo)
     });
 }
