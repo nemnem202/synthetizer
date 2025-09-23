@@ -48,3 +48,8 @@ pub struct NoteDTO {
     pub value: u8,
     pub velocity: u8,
 }
+
+pub struct Mix {
+    pub dry: f32,
+    pub wet: f32,
+}

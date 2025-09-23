@@ -10,9 +10,9 @@ use web_sys::console;
 pub mod buffers;
 use crate::buffers::*;
 pub mod audio_processor;
-
 pub mod constants;
 pub mod dsp_effects;
+pub mod mixer;
 pub mod note;
 pub mod note_manager;
 pub mod oscillator;
@@ -22,14 +22,10 @@ pub mod types;
 pub mod wave_gen;
 
 use crate::constants::*;
-
-use crate::dsp_effects::BiquadCoeffs;
-use crate::dsp_effects::BiquadFilter;
-use crate::dsp_effects::Echo;
+use crate::mixer::Mixer;
 use crate::ring_buffer_manager::*;
 
 use crate::audio_processor::*;
-use crate::toolkit::ToolKit;
 
 use console_error_panic_hook;
 
@@ -37,21 +33,9 @@ thread_local! {
     pub static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
     pub static AUDIO_PROCESSOR: RefCell<Option<AudioProcessor>> = RefCell::new(None);
 
-    pub static TEST_BIQUAD: Lazy<Mutex<BiquadFilter>> = Lazy::new(|| {
-        let coeffs = BiquadCoeffs::calc_biquad_coeffs(800.0, 0.7, SAMPLE_RATE);
-        Mutex::new(BiquadFilter {
-            coeffs,
-            z1l: 0.0,
-            z2l: 0.0,
-            z1r: 0.0,
-            z2r: 0.0,
-        })
-    });
-
-    pub static TEST_DELAY: Lazy<Mutex<Echo>> = Lazy::new(|| {
-        let  echo = Echo::new(ToolKit::convert_ms_to_sample(300.0), 0.5, ToolKit::convert_ms_to_sample(10.0), ToolKit::convert_ms_to_sample(50.0));
-        Mutex::new(echo)
-    });
+pub static MIXER: Lazy<Mutex<Mixer>> = Lazy::new(|| {
+    Mutex::new(Mixer::new())
+});
 }
 
 #[wasm_bindgen(start)]

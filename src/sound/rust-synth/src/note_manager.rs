@@ -4,8 +4,7 @@ use crate::types::*;
 
 use crate::oscillator::*;
 
-use crate::TEST_BIQUAD;
-use crate::TEST_DELAY;
+use crate::MIXER;
 use crate::note::*;
 
 pub struct NoteManager {
@@ -68,19 +67,10 @@ impl NoteManager {
                     mixed_l /= oscillators.len() as f32;
                     mixed_r /= oscillators.len() as f32;
                 }
-
-                TEST_BIQUAD.with(|biquad| {
-                    let mut biquad = biquad.lock().unwrap(); // Mutex guard
-
-                    let (l_out, r_out) = biquad.process(mixed_l, mixed_r);
-                    mixed_l = l_out;
-                    mixed_r = r_out;
-                });
             }
 
-            TEST_DELAY.with(|ech| {
-                let mut echo = ech.lock().unwrap();
-                echo.process(&mut mixed_l, &mut mixed_r);
+            MIXER.with(|mix| {
+                mix.lock().unwrap().render(&mut mixed_l, &mut mixed_r);
             });
 
             mixed_l *= 0.1;
