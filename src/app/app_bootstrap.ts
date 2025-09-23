@@ -11,7 +11,6 @@ document.body.innerHTML = `
     <h1>Projet : Synthétiseur Rust / WebAssembly Ultra-Performance</h1>
     <p>
       Découvrez mon projet de <strong>synthétiseur</strong> développé en <strong>Rust</strong> et compilé en <strong>WebAssembly</strong> pour des performances ultra-hautes et un contrôle <em>low-level</em>. Un projet unique : rien de comparable n'a vraiment été fait auparavant !  
-      <strong>J'ai réussi à jouer jusqu'à ≈600 oscillateurs simultanément sans artefact audible.</strong>
     </p>
     <p>
       Pour jouer, vous avez deux options : 

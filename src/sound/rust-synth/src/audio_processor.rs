@@ -76,8 +76,8 @@ impl AudioProcessor {
                     self.oscillators.push(Oscillator {
                         id: osc_index,
                         wave_type: WaveType::Sine,
-                        attack_length: ToolKit::convert_ms_to_sample(500.0) as u64,
-                        decay_length: ToolKit::convert_ms_to_sample(500.0) as u64,
+                        attack_length: ToolKit::convert_ms_to_sample(0.0) as u64,
+                        decay_length: ToolKit::convert_ms_to_sample(10.0) as u64,
                         sustain_gain: 0.5,
                         release_length: ToolKit::convert_ms_to_sample(500.0) as u64,
                         frequency_shift: 1.0,
