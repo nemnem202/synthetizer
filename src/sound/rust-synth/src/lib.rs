@@ -261,20 +261,23 @@ impl BiquadFilter {
 struct Echo {
     pub delay: usize,
     pub feedback: f32,
+    pub memory: MemoryBuffer,
 }
 
 impl Echo {
     pub fn new(delay: usize, feedback: f32) -> Self {
         Echo {
             delay: delay,
-            feedback: feedback,
+            feedback: feedback.max(0.0).min(1.0),
+            memory: MemoryBuffer::new(44100, 10.0),
         }
     }
 
-    pub fn process(&self, buffer: &DelayBuffer, input_l: &mut f32, input_r: &mut f32) {
-        let (l, r) = buffer.read(self.delay);
+    pub fn process(&mut self, input_l: &mut f32, input_r: &mut f32) {
+        let (l, r) = self.memory.read(self.delay);
         *input_l += l * self.feedback;
         *input_r += r * self.feedback;
+        self.memory.write(*input_l, *input_r);
     }
 }
 
@@ -461,12 +464,9 @@ impl NoteManager {
                 });
             }
 
-            DELAY_BUFFER.with(|buff| {
-                let buff = buff.lock().unwrap();
-                TEST_DELAY.with(|ech| {
-                    let echo = ech.lock().unwrap();
-                    echo.process(&buff, &mut mixed_l, &mut mixed_r);
-                });
+            TEST_DELAY.with(|ech| {
+                let mut echo = ech.lock().unwrap();
+                echo.process(&mut mixed_l, &mut mixed_r);
             });
 
             mixed_l *= 0.1;
@@ -474,11 +474,6 @@ impl NoteManager {
 
             samples.push(mixed_l);
             samples.push(mixed_r);
-
-            DELAY_BUFFER.with(|buff| {
-                let mut buffer = buff.lock().unwrap();
-                buffer.write(mixed_l, mixed_r);
-            });
 
             continue;
         }
@@ -555,13 +550,13 @@ pub struct SharedBuffers {
     osc: OscillatorBuffers,
 }
 
-pub struct DelayBuffer {
+pub struct MemoryBuffer {
     buffer: Vec<f32>,
     size: usize,
     write_index: usize,
 }
 
-impl DelayBuffer {
+impl MemoryBuffer {
     /// Crée un buffer pour `duration_seconds` à `sample_rate` Hz
     pub fn new(sample_rate: usize, duration_seconds: f32) -> Self {
         let size = (sample_rate as f32 * duration_seconds * 2.0) as usize;
@@ -793,13 +788,13 @@ thread_local! {
         })
     });
 
-    static DELAY_BUFFER: Lazy<Mutex<DelayBuffer>> = Lazy::new(|| {
-    let  buffer = DelayBuffer::new(44100, 10.0); // 10s à 44.1kHz
-    Mutex::new(buffer)
-    });
+    // static DELAY_BUFFER: Lazy<Mutex<MemoryBuffer>> = Lazy::new(|| {
+    // let  buffer = MemoryBuffer::new(44100, 10.0); // 10s à 44.1kHz
+    // Mutex::new(buffer)
+    // });
 
     static TEST_DELAY: Lazy<Mutex<Echo>> = Lazy::new(|| {
-        let  echo = Echo::new((44100.0 * 0.01 * 2.0) as usize, 9.9);
+        let  echo = Echo::new((44100.0 * 0.3 * 2.0) as usize, 0.5);
         Mutex::new(echo)
     });
 }
