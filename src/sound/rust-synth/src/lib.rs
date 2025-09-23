@@ -1,7 +1,9 @@
 use js_sys::{Array, Atomics, Float32Array, Int32Array, SharedArrayBuffer, Uint8Array};
+use once_cell::sync::Lazy;
 use once_cell::unsync::OnceCell;
 use std::cell::RefCell;
 use std::f32::consts::TAU;
+use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 use web_sys::console;
 
@@ -201,6 +203,76 @@ impl Oscillator {
 }
 
 // =============================================================================
+// Effets DSP
+// =============================================================================
+pub struct BiquadCoeffs {
+    pub b0: f32,
+    pub b1: f32,
+    pub b2: f32,
+    pub a1: f32,
+    pub a2: f32,
+}
+
+impl BiquadCoeffs {
+    pub fn calc_biquad_coeffs(frequency: f32, q: f32, sample_rate: f32) -> BiquadCoeffs {
+        let w0 = 2.0 * std::f32::consts::PI * frequency / sample_rate;
+        let alpha = (w0).sin() / (2.0 * q);
+
+        let b0 = (1.0 - w0.cos()) / 2.0;
+        let b1 = 1.0 - w0.cos();
+        let b2 = (1.0 - w0.cos()) / 2.0;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * w0.cos();
+        let a2 = 1.0 - alpha;
+
+        // Normalisation
+        BiquadCoeffs {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
+}
+struct BiquadFilter {
+    coeffs: BiquadCoeffs,
+    z1: f32,
+    z2: f32,
+}
+
+impl BiquadFilter {
+    pub fn process(&mut self, input_sample: f32) -> f32 {
+        let output_sample = self.coeffs.b0 * input_sample + self.z1;
+        self.z1 = self.coeffs.b1 * input_sample - self.coeffs.a1 * output_sample + self.z2;
+        self.z2 = self.coeffs.b2 * input_sample - self.coeffs.a2 * output_sample;
+        output_sample
+    }
+}
+
+struct StereoBiquadFilter {
+    coeffs: BiquadCoeffs,
+    z1l: f32,
+    z1r: f32,
+    z2l: f32,
+    z2r: f32,
+}
+
+impl StereoBiquadFilter {
+    pub fn process(&mut self, input_sample_r: f32, input_sample_l: f32) -> (f32, f32) {
+        let output_sample_r = self.coeffs.b0 * input_sample_r + self.z1r;
+        let output_sample_l = self.coeffs.b0 * input_sample_l + self.z1l;
+
+        self.z1l = self.coeffs.b1 * input_sample_l - self.coeffs.a1 * output_sample_l + self.z2l;
+        self.z1r = self.coeffs.b1 * input_sample_r - self.coeffs.a1 * output_sample_r + self.z2r;
+
+        self.z2l = self.coeffs.b2 * input_sample_l - self.coeffs.a2 * output_sample_l;
+        self.z2r = self.coeffs.b2 * input_sample_r - self.coeffs.a2 * output_sample_r;
+
+        (output_sample_r, output_sample_l)
+    }
+}
+// =============================================================================
 // ÉTAT D'OSCILLATEUR ET NOTE
 // =============================================================================
 
@@ -373,6 +445,17 @@ impl NoteManager {
                 mixed_l += l;
                 mixed_r += r;
             }
+
+            mixed_l /= oscillators.len() as f32;
+            mixed_r /= oscillators.len() as f32;
+
+            TEST_BIQUAD.with(|biquad| {
+                let mut biquad = biquad.lock().unwrap(); // Mutex guard
+
+                let (l_out, r_out) = biquad.process(mixed_l, mixed_r);
+                mixed_l = l_out;
+                mixed_r = r_out;
+            });
 
             samples.push(mixed_l * 0.1);
             samples.push(mixed_r * 0.1);
@@ -645,6 +728,17 @@ impl AudioProcessor {
 thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
     static AUDIO_PROCESSOR: RefCell<Option<AudioProcessor>> = RefCell::new(None);
+
+    static TEST_BIQUAD: Lazy<Mutex<StereoBiquadFilter>> = Lazy::new(|| {
+        let coeffs = BiquadCoeffs::calc_biquad_coeffs(800.0, 0.7, 44100.0);
+        Mutex::new(StereoBiquadFilter {
+            coeffs,
+            z1l: 0.0,
+            z2l: 0.0,
+            z1r: 0.0,
+            z2r: 0.0,
+        })
+    });
 }
 
 // =============================================================================
