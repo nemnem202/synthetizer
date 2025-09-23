@@ -237,28 +237,13 @@ impl BiquadCoeffs {
 }
 struct BiquadFilter {
     coeffs: BiquadCoeffs,
-    z1: f32,
-    z2: f32,
-}
-
-impl BiquadFilter {
-    pub fn process(&mut self, input_sample: f32) -> f32 {
-        let output_sample = self.coeffs.b0 * input_sample + self.z1;
-        self.z1 = self.coeffs.b1 * input_sample - self.coeffs.a1 * output_sample + self.z2;
-        self.z2 = self.coeffs.b2 * input_sample - self.coeffs.a2 * output_sample;
-        output_sample
-    }
-}
-
-struct StereoBiquadFilter {
-    coeffs: BiquadCoeffs,
     z1l: f32,
     z1r: f32,
     z2l: f32,
     z2r: f32,
 }
 
-impl StereoBiquadFilter {
+impl BiquadFilter {
     pub fn process(&mut self, input_sample_r: f32, input_sample_l: f32) -> (f32, f32) {
         let output_sample_r = self.coeffs.b0 * input_sample_r + self.z1r;
         let output_sample_l = self.coeffs.b0 * input_sample_l + self.z1l;
@@ -272,6 +257,27 @@ impl StereoBiquadFilter {
         (output_sample_r, output_sample_l)
     }
 }
+
+struct Echo {
+    pub delay: usize,
+    pub feedback: f32,
+}
+
+impl Echo {
+    pub fn new(delay: usize, feedback: f32) -> Self {
+        Echo {
+            delay: delay,
+            feedback: feedback,
+        }
+    }
+
+    pub fn process(&self, buffer: &DelayBuffer, input_l: &mut f32, input_r: &mut f32) {
+        let (l, r) = buffer.read(self.delay);
+        *input_l += l * self.feedback;
+        *input_r += r * self.feedback;
+    }
+}
+
 // =============================================================================
 // ÉTAT D'OSCILLATEUR ET NOTE
 // =============================================================================
@@ -430,35 +436,51 @@ impl NoteManager {
         let frame_count = sample_count / 2;
 
         for _ in 0..frame_count {
-            if self.notes.is_empty() {
-                // silence stéréo
-                samples.push(0.0);
-                samples.push(0.0);
-                continue;
-            }
-
             let mut mixed_l = 0.0;
             let mut mixed_r = 0.0;
 
-            for note in self.notes.iter_mut() {
-                let (l, r) = note.generate_sample(oscillators);
-                mixed_l += l;
-                mixed_r += r;
+            if self.notes.is_empty() {
+            } else {
+                for note in self.notes.iter_mut() {
+                    let (l, r) = note.generate_sample(oscillators);
+                    mixed_l += l;
+                    mixed_r += r;
+                }
+
+                if !oscillators.is_empty() {
+                    mixed_l /= oscillators.len() as f32;
+                    mixed_r /= oscillators.len() as f32;
+                }
+
+                TEST_BIQUAD.with(|biquad| {
+                    let mut biquad = biquad.lock().unwrap(); // Mutex guard
+
+                    let (l_out, r_out) = biquad.process(mixed_l, mixed_r);
+                    mixed_l = l_out;
+                    mixed_r = r_out;
+                });
             }
 
-            mixed_l /= oscillators.len() as f32;
-            mixed_r /= oscillators.len() as f32;
-
-            TEST_BIQUAD.with(|biquad| {
-                let mut biquad = biquad.lock().unwrap(); // Mutex guard
-
-                let (l_out, r_out) = biquad.process(mixed_l, mixed_r);
-                mixed_l = l_out;
-                mixed_r = r_out;
+            DELAY_BUFFER.with(|buff| {
+                let buff = buff.lock().unwrap();
+                TEST_DELAY.with(|ech| {
+                    let echo = ech.lock().unwrap();
+                    echo.process(&buff, &mut mixed_l, &mut mixed_r);
+                });
             });
 
-            samples.push(mixed_l * 0.1);
-            samples.push(mixed_r * 0.1);
+            mixed_l *= 0.1;
+            mixed_r *= 0.1;
+
+            samples.push(mixed_l);
+            samples.push(mixed_r);
+
+            DELAY_BUFFER.with(|buff| {
+                let mut buffer = buff.lock().unwrap();
+                buffer.write(mixed_l, mixed_r);
+            });
+
+            continue;
         }
 
         self.cleanup_finished_notes();
@@ -533,6 +555,37 @@ pub struct SharedBuffers {
     osc: OscillatorBuffers,
 }
 
+pub struct DelayBuffer {
+    buffer: Vec<f32>,
+    size: usize,
+    write_index: usize,
+}
+
+impl DelayBuffer {
+    /// Crée un buffer pour `duration_seconds` à `sample_rate` Hz
+    pub fn new(sample_rate: usize, duration_seconds: f32) -> Self {
+        let size = (sample_rate as f32 * duration_seconds * 2.0) as usize;
+        Self {
+            buffer: vec![0.0; size],
+            size,
+            write_index: 0,
+        }
+    }
+
+    /// Écrit un sample dans le buffer
+    pub fn write(&mut self, sample_l: f32, sample_r: f32) {
+        self.buffer[self.write_index] = sample_l;
+        self.buffer[self.write_index + 1] = sample_r;
+        self.write_index = (self.write_index + 2) % self.size;
+    }
+
+    /// Lit un sample avec un délai en nombre d’échantillons
+    pub fn read(&self, delay_samples: usize) -> (f32, f32) {
+        // on calcule la position de lecture "dans le passé"
+        let read_index = (self.size + self.write_index - delay_samples) % self.size;
+        (self.buffer[read_index], self.buffer[read_index + 1])
+    }
+}
 // =============================================================================
 // GESTIONNAIRE DE RING BUFFER
 // =============================================================================
@@ -717,7 +770,7 @@ impl AudioProcessor {
     }
 
     pub fn convert_ms_to_sample(&self, ms: f32) -> f32 {
-        (ms / 1000.0 * 44100.0).floor()
+        (ms / 1000.0 * SAMPLE_RATE).floor()
     }
 }
 
@@ -729,15 +782,25 @@ thread_local! {
     static SHARED_BUFFERS: OnceCell<SharedBuffers> = OnceCell::new();
     static AUDIO_PROCESSOR: RefCell<Option<AudioProcessor>> = RefCell::new(None);
 
-    static TEST_BIQUAD: Lazy<Mutex<StereoBiquadFilter>> = Lazy::new(|| {
-        let coeffs = BiquadCoeffs::calc_biquad_coeffs(800.0, 0.7, 44100.0);
-        Mutex::new(StereoBiquadFilter {
+    static TEST_BIQUAD: Lazy<Mutex<BiquadFilter>> = Lazy::new(|| {
+        let coeffs = BiquadCoeffs::calc_biquad_coeffs(800.0, 0.7, SAMPLE_RATE);
+        Mutex::new(BiquadFilter {
             coeffs,
             z1l: 0.0,
             z2l: 0.0,
             z1r: 0.0,
             z2r: 0.0,
         })
+    });
+
+    static DELAY_BUFFER: Lazy<Mutex<DelayBuffer>> = Lazy::new(|| {
+    let  buffer = DelayBuffer::new(44100, 10.0); // 10s à 44.1kHz
+    Mutex::new(buffer)
+    });
+
+    static TEST_DELAY: Lazy<Mutex<Echo>> = Lazy::new(|| {
+        let  echo = Echo::new((44100.0 * 0.01 * 2.0) as usize, 9.9);
+        Mutex::new(echo)
     });
 }
 
