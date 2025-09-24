@@ -51,7 +51,6 @@ export class AudioEngineOrchestrator {
       this.rustWorker.onmessage = (e: MessageEvent) => {
         if (e.data.type === "module_end_init") {
           console.log("[SOUND ENGINE] worker module init end, init wasm...");
-          console.log("MIDI buffer:", midi_queue_buffer);
 
           this.rustWorker.postMessage({
             type: "init_wasm",

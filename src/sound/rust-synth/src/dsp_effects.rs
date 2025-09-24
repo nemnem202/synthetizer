@@ -1,5 +1,21 @@
 use crate::{buffers::MemoryBuffer, constants::SAMPLE_RATE, types::Mix};
 
+pub enum EffectsEnum {
+    Echo,
+    Filter,
+}
+
+impl TryFrom<u32> for EffectsEnum {
+    type Error = ();
+
+    fn try_from(value: u32) -> Result<Self, Self::Error> {
+        match value {
+            0 => Ok(EffectsEnum::Echo),
+            1 => Ok(EffectsEnum::Filter),
+            _ => Err(()),
+        }
+    }
+}
 pub trait EffectTrait {
     fn id(&self) -> usize;
     fn process(&mut self, sample_l: &mut f32, sample_r: &mut f32);
@@ -76,6 +92,13 @@ impl EffectTrait for BiquadFilter {
     }
 }
 
+pub struct EchoParams {
+    pub delay: usize,
+    pub feedback: f32,
+    pub r_delay_offset: usize,
+    pub l_delay_offset: usize,
+    pub mix: Mix,
+}
 pub struct Echo {
     id: usize,
     pub delay: usize,
@@ -88,11 +111,11 @@ pub struct Echo {
 
 impl Echo {
     pub fn new(
-        mix: Mix,
         delay: usize,
         feedback: f32,
         r_delay_offset: usize,
         l_delay_offset: usize,
+        mix: Mix,
         id: usize,
     ) -> Self {
         Echo {

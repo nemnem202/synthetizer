@@ -1,5 +1,5 @@
 import type { WaveType } from "../sound/rust-synth/build/rust_synth";
-import { OscKey, SynthApi } from "../sound/synth_api_service";
+import { EchoParams, Effects, OscKey, SynthApi } from "../sound/synth_api_service";
 
 const keys = ["q", "z", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j"];
 
@@ -192,9 +192,73 @@ export class SynthComponent {
       fx_select.appendChild(option);
     });
 
+    btn.addEventListener("click", () => {
+      const type = fx_select.value === "0" ? Effects.ECHO : Effects.FILTER;
+      const index = EchoParams.TYPE;
+      const id = this.api.add_fx([{ index: index, value: type }]);
+      this.create_mixer_module(id, container, type);
+    });
+
     container.appendChild(h2);
     container.appendChild(btn);
     container.appendChild(fx_select);
     main_container.appendChild(container);
+  }
+
+  private create_mixer_module(id: number, container: HTMLElement, type: Effects) {
+    const module_container = document.createElement("div");
+    module_container.className = "mixer-module-container";
+
+    let module: HTMLDivElement;
+
+    if (type === Effects.ECHO) {
+      module = this.create_echo_module(id);
+    } else if (type === Effects.FILTER) {
+      module = this.create_filter_module(id);
+    } else {
+      module = document.createElement("div");
+      module.innerText = "error loading module";
+    }
+
+    const btn = document.createElement("button");
+    btn.innerText = "supprimer " + id;
+    btn.addEventListener("click", () => {
+      this.api.remove_fx(id);
+      module.remove();
+    });
+    module_container.appendChild(module);
+    module_container.appendChild(btn);
+
+    container.appendChild(module_container);
+  }
+
+  create_echo_module(id: number): HTMLDivElement {
+    const echo = document.createElement("div");
+    echo.className = "mixer-effect";
+    echo.classList.add("echo-effect");
+
+    const h2 = document.createElement("h2");
+    h2.textContent = "Echo";
+
+    const delay = this.create_slider(echo, "Delay (ms)", 10, 2000, 1, 300);
+    const feedback = this.create_slider(echo, "Feedback (%)", 0, 1, 0.1, 0.7);
+    const offset_r = this.create_slider(echo, "offset_r (ms)", 0, 100, 1, 10);
+    const offset_l = this.create_slider(echo, "offset_l (ms)", 0, 100, 1, 50);
+
+    delay.addEventListener("input", () => {});
+    feedback.addEventListener("input", () => {});
+    offset_l.addEventListener("input", () => {});
+    offset_r.addEventListener("input", () => {});
+    return echo;
+  }
+
+  create_filter_module(id: number): HTMLDivElement {
+    const filter = document.createElement("div");
+    filter.className = "mixer-effect";
+    filter.classList.add("filter-effect");
+
+    const h2 = document.createElement("h2");
+    h2.textContent = "Filter";
+    return filter;
   }
 }

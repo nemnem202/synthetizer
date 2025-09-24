@@ -1,21 +1,26 @@
 use js_sys::Atomics;
 use web_sys::console;
 
+use crate::buffers::FxBuffers;
 use crate::buffers::MidiBuffers;
 use crate::buffers::OscillatorBuffers;
 use crate::constants::*;
+use crate::dsp_effects::EffectTrait;
+use crate::dsp_effects::EffectsEnum;
 use crate::note_manager::NoteManager;
 use crate::ring_buffer_manager::RingBufferManager;
 use crate::toolkit::*;
 
 use crate::types::*;
 
+use crate::MIXER;
 use crate::oscillator::*;
 
 pub struct AudioProcessor {
     note_manager: NoteManager,
     oscillators: Vec<Oscillator>,
     global_sample_index: u64,
+    effects: Vec<Box<dyn EffectTrait>>,
 }
 
 impl AudioProcessor {
@@ -24,6 +29,7 @@ impl AudioProcessor {
             note_manager: NoteManager::new(),
             oscillators: Vec::new(),
             global_sample_index: 0,
+            effects: Vec::new(),
         }
     }
 
@@ -141,5 +147,56 @@ impl AudioProcessor {
         }
 
         Atomics::store(&osc_buffers.read_idx, 0, read_pos as i32).unwrap();
+    }
+
+    pub fn process_fx_events(&mut self, fx_buffer: &FxBuffers) {
+        let mut read_pos = Atomics::load(&fx_buffer.read_idx, 0).unwrap() as u32;
+        let write_pos = Atomics::load(&fx_buffer.write_idx, 0).unwrap() as u32;
+
+        if read_pos == write_pos {
+            return;
+        };
+
+        while read_pos != write_pos {
+            let offset = read_pos * 16 + 2; // FX_EVENT_SIZE = 16
+            let event_type = fx_buffer.queue.get_index(offset) as u32;
+            let fx_id = fx_buffer.queue.get_index(offset + 1) as u32;
+
+            let params: Vec<f32> = (0..14)
+                .map(|i| fx_buffer.queue.get_index(offset + 2 + i) as f32)
+                .collect();
+
+            match event_type {
+                0 => self.add_fx(fx_id, params),
+                1 => self.remove_fx(fx_id),
+                2 => self.edit_fx(fx_id, params),
+                _ => {}
+            }
+
+            read_pos = (read_pos + 1) % FX_QUEUE_CAPACITY;
+        }
+        Atomics::store(&fx_buffer.read_idx, 0, read_pos as i32).unwrap();
+    }
+
+    pub fn add_fx(&mut self, fx_id: u32, params: Vec<f32>) {
+        let effect = EffectsEnum::try_from(params[0] as u32).unwrap();
+
+        match effect {
+            EffectsEnum::Echo => MIXER.with(|m| {
+                let mut mixer = m.lock().unwrap();
+                mixer.create_echo(fx_id, params);
+            }),
+            EffectsEnum::Filter => {
+                console::log_1(&format!("Filtre créé à l'id {}", fx_id).into());
+            }
+        }
+    }
+
+    pub fn remove_fx(&mut self, fx_id: u32) {
+        console::log_1(&format!("FX {} supprimé", fx_id).into());
+    }
+
+    pub fn edit_fx(&mut self, fx_id: u32, params: Vec<f32>) {
+        console::log_1(&format!("FX {} modifié avec les paramètres: {:?}", fx_id, params).into());
     }
 }

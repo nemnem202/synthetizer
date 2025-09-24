@@ -18,7 +18,6 @@ impl NoteManager {
 
     pub fn add_note(&mut self, dto: &NoteDTO, oscillators: &[Oscillator]) {
         if let Some(existing_note) = self.notes.iter_mut().find(|n| n.value == dto.value) {
-            console::log_1(&"La note existe déjà OEOE".into());
             if existing_note.has_ended {
                 existing_note.restart(oscillators);
             }

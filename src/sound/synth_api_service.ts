@@ -12,17 +12,17 @@ const OSC_QUEUE_CAPACITY = 100;
 const OSC_BUFFER_SIZE = OSC_QUEUE_CAPACITY * OSC_EVENT_SIZE;
 
 export enum OscKey {
-  NONE = 0,
-  ATTACK = 1,
-  RELEASE = 2,
-  DECAY = 3,
-  SUSTAIN = 4,
-  GAIN = 5,
-  DELAY = 6,
-  PITCH = 7,
-  PHASE = 8,
-  WAVEFORM = 9,
-  PAN = 10,
+  NONE,
+  ATTACK,
+  RELEASE,
+  DECAY,
+  SUSTAIN,
+  GAIN,
+  DELAY,
+  PITCH,
+  PHASE,
+  WAVEFORM,
+  PAN,
 }
 
 // -------------------- Constantes FX ----------------------
@@ -30,6 +30,29 @@ export enum OscKey {
 const FX_PARAMS_NUMBER = 16; // nombre de paramètres qu'on peut modifier + id + identifiant
 const FX_BUFFER_QUEUE_CAPACITY = 64;
 const FX_BUFFER_SIZE = FX_PARAMS_NUMBER * FX_BUFFER_QUEUE_CAPACITY;
+
+export type EffectParams = { index: number; value: number };
+
+export enum Effects {
+  ECHO,
+  FILTER,
+}
+
+export enum EchoParams {
+  TYPE, // générique, définit que c'est un echo
+  DELAY,
+  FEEDBACK,
+  R_DELAY_OFFSET,
+  L_DELAY_OFFSET,
+  DRY,
+  WET,
+}
+
+export enum FilterParams {
+  TYPE,
+  FREQUENCY,
+  Q,
+}
 
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
@@ -52,6 +75,7 @@ export class SynthApi {
   private static fx_write_index: Int32Array;
 
   private nmbr_of_oscillators = 0;
+  private nmbr_of_fx = 0;
 
   constructor() {
     SynthApi.soundEngine = AudioEngineOrchestrator.getInstance();
@@ -216,6 +240,28 @@ export class SynthApi {
     }
 
     Atomics.store(SynthApi.fx_write_index, 0, nextWrite);
+  }
+
+  add_fx(effects: EffectParams[]) {
+    const values = Array.from<number>({ length: FX_PARAMS_NUMBER - 2 }).fill(0);
+    effects.forEach((e) => (values[e.index] = e.value));
+    const id = Number(JSON.parse(JSON.stringify(this.nmbr_of_fx)));
+
+    SynthApi.write_to_fx_queue(id, 0, values);
+    this.nmbr_of_fx++;
+    return id;
+  }
+
+  edit_fx(effects: EffectParams[], id: number) {
+    const values = Array.from<number>({ length: FX_PARAMS_NUMBER - 2 }).fill(0);
+    effects.forEach((e) => (values[e.index] = e.value));
+    SynthApi.write_to_fx_queue(id, 2, values);
+  }
+
+  remove_fx(id: number) {
+    const values = Array.from<number>({ length: FX_PARAMS_NUMBER - 2 }).fill(0);
+    console.log("supprimer l' id: ", id);
+    SynthApi.write_to_fx_queue(id, 1, values);
   }
 
   public destroy() {

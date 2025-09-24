@@ -47,7 +47,13 @@ self.onmessage = (e: MessageEvent) => {
     const indexes = new Int32Array(sharedBuffer, 0, 3);
     flag = indexes.subarray(0, 1);
 
-    init_audio_thread(sharedBuffer, ringBufferSize, midi_queue_buffer, osc_queue_buffer);
+    init_audio_thread(
+      sharedBuffer,
+      ringBufferSize,
+      midi_queue_buffer,
+      osc_queue_buffer,
+      fx_queue_buffer
+    );
 
     console.log("[RUST WORKER] initialisation done, processing loop...");
     start_audio_processing_loop();

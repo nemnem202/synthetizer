@@ -55,6 +55,55 @@ impl MidiBuffers {
     }
 }
 
+pub struct FxBuffers {
+    pub write_idx: Int32Array,
+    pub read_idx: Int32Array,
+    pub queue: Float32Array,
+}
+
+impl FxBuffers {
+    pub fn dequeue_event(&self) -> Option<FxEventDto> {
+        let read_pos = Atomics::load(&self.read_idx, 0).unwrap() as u32;
+        let write_pos = Atomics::load(&self.write_idx, 0).unwrap() as u32;
+
+        if read_pos == write_pos {
+            return None;
+        }
+
+        let event_offset = read_pos * FX_EVENT_SIZE;
+        let _event_type = self.queue.get_index(event_offset);
+        let fx_id = self.queue.get_index(event_offset + 1);
+
+        let mut params = Vec::with_capacity((FX_PARAMS_NUMBER) as usize);
+        for i in 0..(FX_PARAMS_NUMBER) {
+            params.push(self.queue.get_index(event_offset + 2 + i) as f32);
+        }
+
+        let new_read_pos = (read_pos + 1) % FX_QUEUE_CAPACITY;
+        Atomics::store(&self.read_idx, 0, new_read_pos as i32).unwrap();
+
+        Some(FxEventDto {
+            id: fx_id as u32,
+            event_type: _event_type as u32,
+            params: params,
+        })
+    }
+
+    pub fn process_all_events<F>(&self, mut handler: F) -> u32
+    where
+        F: FnMut(&FxEventDto),
+    {
+        let mut events_processed = 0;
+
+        while let Some(dto) = self.dequeue_event() {
+            events_processed += 1;
+            handler(&dto);
+        }
+
+        events_processed
+    }
+}
+
 pub struct OscillatorBuffers {
     pub write_idx: Int32Array,
     pub read_idx: Int32Array,
@@ -65,6 +114,7 @@ pub struct SharedBuffers {
     pub audio: AudioBuffers,
     pub midi: MidiBuffers,
     pub osc: OscillatorBuffers,
+    pub fx: FxBuffers,
 }
 
 pub struct MemoryBuffer {

@@ -52,6 +52,7 @@ pub fn init_audio_thread(
     ring_buffer_size: u32,
     midi_buffer: SharedArrayBuffer,
     osc_buffer: SharedArrayBuffer,
+    fx_buffer: SharedArrayBuffer,
 ) {
     // -------- Audio --------
     let control_arr = Int32Array::new(&shared_audio_buffer);
@@ -76,6 +77,13 @@ pub fn init_audio_thread(
     let osc_read_idx = osc_control_arr.subarray(1, 2);
     let osc_queue = Uint8Array::new(&osc_buffer).subarray(8, osc_buffer.byte_length());
 
+    // -------- FX ------------------
+
+    let fx_control_arr = Int32Array::new(&fx_buffer);
+    let fx_write_idx = fx_control_arr.subarray(0, 1);
+    let fx_read_idx = fx_control_arr.subarray(1, 2);
+    let fx_queue = Float32Array::new(&fx_buffer);
+
     // -------- SharedBuffers --------
     let shared_buffers = SharedBuffers {
         audio: AudioBuffers {
@@ -93,6 +101,11 @@ pub fn init_audio_thread(
             write_idx: osc_write_idx,
             read_idx: osc_read_idx,
             queue: osc_queue,
+        },
+        fx: FxBuffers {
+            write_idx: fx_write_idx,
+            read_idx: fx_read_idx,
+            queue: fx_queue,
         },
     };
 
@@ -131,6 +144,8 @@ fn audio_producer_loop(buffers: &SharedBuffers) {
                 processor.process_midi_events(midi);
 
                 processor.process_osc_events(&buffers.osc);
+
+                processor.process_fx_events(&buffers.fx);
                 // Vérification si la MIDI queue et le tableau de notes sont vides
                 // if processor.note_manager.notes.is_empty() && events_processed == 0 {
                 //     processor.process_osc_events(&buffers.osc);

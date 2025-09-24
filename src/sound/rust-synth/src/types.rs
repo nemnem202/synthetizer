@@ -49,7 +49,14 @@ pub struct NoteDTO {
     pub velocity: u8,
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Mix {
     pub dry: f32,
     pub wet: f32,
+}
+
+pub struct FxEventDto {
+    pub id: u32,
+    pub event_type: u32,
+    pub params: Vec<f32>,
 }
