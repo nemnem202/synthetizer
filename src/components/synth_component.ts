@@ -57,9 +57,9 @@ export class SynthComponent {
     container.appendChild(waveformLabel);
     container.appendChild(waveformSelect);
 
-    const attack = this.create_slider(container, "Attack (ms)", 200, 10000, 1, 500);
-    const decay = this.create_slider(container, "Decay (ms)", 200, 10000, 1, 500);
-    const sustain = this.create_slider(container, "Sustain (%)", 0, 100, 1, 50);
+    const attack = this.create_slider(container, "Attack (ms)", 0, 10000, 1, 0);
+    const decay = this.create_slider(container, "Decay (ms)", 10, 10000, 1, 500);
+    const sustain = this.create_slider(container, "Sustain (%)", 0, 100, 1, 20);
     const release = this.create_slider(container, "Release (ms)", 0, 10000, 1, 500);
     const delay = this.create_slider(container, "Delay (ms)", 0, 10000, 1, 0);
     const frequency = this.create_slider(container, "Shift (semitones)", -36, 36, 1, 0);
