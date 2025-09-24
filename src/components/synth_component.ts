@@ -7,13 +7,18 @@ export class SynthComponent {
   api: SynthApi;
   constructor(api: SynthApi) {
     this.api = api;
-
+    document.body.innerHTML = "";
     const container = document.createElement("div");
     container.className = "synthcontainer";
-
+    this.create_mixer(document.body);
+    const h2 = document.createElement("h2");
+    h2.textContent = "Oscillateurs";
     const btn = document.createElement("button");
-    btn.addEventListener("click", () => this.create_oscillator(container));
+    btn.addEventListener("click", () => {
+      this.create_oscillator(container);
+    });
     btn.innerText = "ajouter un oscillateur";
+    document.body.appendChild(h2);
     document.body.appendChild(btn);
     document.body.appendChild(container);
 
@@ -166,5 +171,30 @@ export class SynthComponent {
       playedkeys = playedkeys.filter((k) => k !== e.key.toLowerCase());
       SynthApi.stopNote(72 + index);
     });
+  }
+
+  private create_mixer(main_container: HTMLElement) {
+    const container = document.createElement("div");
+    container.className = "mixer-container";
+
+    const h2 = document.createElement("h2");
+    h2.innerText = `Mixer`;
+
+    const btn = document.createElement("button");
+    btn.innerText = "Ajouter un Effet";
+
+    const fx_select = document.createElement("select");
+
+    ["Echo", "Filter"].forEach((fx, index) => {
+      const option = document.createElement("option");
+      option.value = `${index}`;
+      option.text = fx;
+      fx_select.appendChild(option);
+    });
+
+    container.appendChild(h2);
+    container.appendChild(btn);
+    container.appendChild(fx_select);
+    main_container.appendChild(container);
   }
 }

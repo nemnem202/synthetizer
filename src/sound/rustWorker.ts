@@ -22,12 +22,13 @@ self.onmessage = (e: MessageEvent) => {
     const midi_queue_buffer = e.data.midi_queue_buffer;
     const ringBufferSize = e.data.ringBufferSize;
     const osc_queue_buffer = e.data.osc_queue_buffer;
-
+    const fx_queue_buffer = e.data.fx_queue_buffer;
     if (
       !(sharedBuffer instanceof SharedArrayBuffer) ||
       typeof ringBufferSize !== "number" ||
       !(midi_queue_buffer instanceof SharedArrayBuffer) ||
-      !(osc_queue_buffer instanceof SharedArrayBuffer)
+      !(osc_queue_buffer instanceof SharedArrayBuffer) ||
+      !(fx_queue_buffer instanceof SharedArrayBuffer)
     ) {
       console.log(
         "error - invalid buffers:",

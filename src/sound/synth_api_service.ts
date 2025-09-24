@@ -11,12 +11,6 @@ const OSC_EVENT_SIZE = 8; // 8 octets par évènement oscillateur
 const OSC_QUEUE_CAPACITY = 100;
 const OSC_BUFFER_SIZE = OSC_QUEUE_CAPACITY * OSC_EVENT_SIZE;
 
-type OscillatorEvent = {
-  type: number; // add: 0 remove: 1, update: 2
-  key: number;
-  value: number;
-};
-
 export enum OscKey {
   NONE = 0,
   ATTACK = 1,
@@ -30,6 +24,12 @@ export enum OscKey {
   WAVEFORM = 9,
   PAN = 10,
 }
+
+// -------------------- Constantes FX ----------------------
+
+const FX_PARAMS_NUMBER = 16; // nombre de paramètres qu'on peut modifier + id + identifiant
+const FX_BUFFER_QUEUE_CAPACITY = 64;
+const FX_BUFFER_SIZE = FX_PARAMS_NUMBER * FX_BUFFER_QUEUE_CAPACITY;
 
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
@@ -45,6 +45,12 @@ export class SynthApi {
   private static osc_queue_array: Uint8Array;
   private static osc_write_index: Int32Array;
 
+  // ---- Buffers FX ----
+
+  private static fx_queue_buffer: SharedArrayBuffer;
+  private static fx_queue_array: Float32Array;
+  private static fx_write_index: Int32Array;
+
   private nmbr_of_oscillators = 0;
 
   constructor() {
@@ -55,6 +61,7 @@ export class SynthApi {
     // Initialisation des buffers
     SynthApi.init_midi_queue();
     SynthApi.init_osc_queue();
+    SynthApi.init_fx_queue();
   }
 
   private static init_midi_queue() {
@@ -73,8 +80,20 @@ export class SynthApi {
     SynthApi.osc_queue_array = new Uint8Array(SynthApi.osc_queue_buffer, controlSize);
   }
 
+  private static init_fx_queue() {
+    const controlSize = 2 * Int32Array.BYTES_PER_ELEMENT;
+    SynthApi.fx_queue_buffer = new SharedArrayBuffer(controlSize + FX_BUFFER_SIZE);
+
+    SynthApi.fx_write_index = new Int32Array(SynthApi.fx_queue_buffer, 0, 2);
+    SynthApi.fx_queue_array = new Float32Array(SynthApi.fx_queue_buffer, controlSize);
+  }
+
   async init() {
-    await SynthApi.soundEngine.init(SynthApi.midi_queue_buffer, SynthApi.osc_queue_buffer);
+    await SynthApi.soundEngine.init(
+      SynthApi.midi_queue_buffer,
+      SynthApi.osc_queue_buffer,
+      SynthApi.fx_queue_buffer
+    );
   }
 
   static playNote(note: noteDTO) {
@@ -174,6 +193,29 @@ export class SynthApi {
 
   private static convert_semitone_to_frequency_shift(semitone: number) {
     return Math.pow(2, semitone / 12);
+  }
+
+  // ----------------------- FX -----------------------------
+
+  private static write_to_fx_queue(id: number, type: number, values: number[]) {
+    const writePos = Atomics.load(SynthApi.fx_write_index, 0);
+    const readPos = Atomics.load(SynthApi.fx_write_index, 1);
+
+    const nextWrite = (writePos + 1) % FX_BUFFER_QUEUE_CAPACITY;
+    if (nextWrite === readPos) {
+      console.warn("Queue FX pleine");
+      return;
+    }
+
+    const offset = writePos * FX_PARAMS_NUMBER;
+    SynthApi.fx_queue_array[offset] = type & 0xff;
+    SynthApi.fx_queue_array[offset + 1] = id & 0xff;
+
+    for (let i = 0; i < values.length; i++) {
+      SynthApi.fx_queue_array[offset + 2 + i] = values[i];
+    }
+
+    Atomics.store(SynthApi.fx_write_index, 0, nextWrite);
   }
 
   public destroy() {
