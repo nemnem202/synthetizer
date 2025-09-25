@@ -1,14 +1,9 @@
 use wasm_bindgen::prelude::*;
 
-use crate::constants::*;
-
-use crate::toolkit::*;
-
-use crate::types::*;
-
-use crate::wave_gen::*;
-
-use crate::note::*;
+use crate::{
+    sound_engine::synthetizer::{note::NoteOscState, wave_generation::WaveGenerator},
+    utils::{constants::SAMPLE_RATE, toolkit::ToolKit, types::WaveType},
+};
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]

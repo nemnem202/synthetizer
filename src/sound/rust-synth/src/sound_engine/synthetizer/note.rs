@@ -1,4 +1,4 @@
-use crate::oscillator::*;
+use crate::sound_engine::synthetizer::oscillator::Oscillator;
 
 #[derive(Debug, Clone)]
 pub struct NoteOscState {
@@ -83,7 +83,10 @@ impl Note {
         self.osc_states.iter().all(|s| s.finished)
     }
 
-    pub fn generate_sample(&mut self, oscillators: &[Oscillator]) -> (f32, f32) {
+    pub fn generate_samples_of_all_oscillators(
+        &mut self,
+        oscillators: &[Oscillator],
+    ) -> (f32, f32) {
         if self.to_remove {
             return (0.0, 0.0);
         }

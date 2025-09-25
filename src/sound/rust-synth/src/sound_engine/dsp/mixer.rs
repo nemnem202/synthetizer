@@ -1,9 +1,8 @@
 use web_sys::console;
 
 use crate::{
-    dsp_effects::{BiquadFilter, Echo, EchoParams, EffectTrait},
-    toolkit::ToolKit,
-    types::Mix,
+    sound_engine::dsp::fx::{Echo, EchoParams, EffectTrait},
+    utils::{toolkit::ToolKit, types::Mix},
 };
 
 pub struct Mixer {

@@ -1,56 +1,53 @@
+use std::{cell::RefCell, rc::Rc};
+
 use js_sys::Atomics;
 use web_sys::console;
 
-use crate::buffers::FxBuffers;
-use crate::buffers::MidiBuffers;
-use crate::buffers::OscillatorBuffers;
-use crate::constants::*;
-use crate::dsp_effects::EffectTrait;
-use crate::dsp_effects::EffectsEnum;
-use crate::mixer::Mixer;
-use crate::note_manager::NoteManager;
-use crate::ring_buffer_manager::RingBufferManager;
-use crate::toolkit::*;
+use crate::{
+    global::MIXER,
+    shared_memory::shared_buffers::{FxBuffers, MidiBuffers, OscillatorBuffers},
+    sound_engine::{
+        dsp::fx::EffectsEnum,
+        synthetizer::{
+            note_manager::{self, NoteManager},
+            oscillator::Oscillator,
+        },
+    },
+    utils::{
+        constants::{
+            FX_EVENT_SIZE_FLOAT, FX_EVENT_SIZE_INT, FX_QUEUE_CAPACITY, OSC_QUEUE_CAPACITY,
+        },
+        toolkit::ToolKit,
+        types::WaveType,
+    },
+};
 
-use crate::types::*;
-
-use crate::MIXER;
-use crate::oscillator::*;
-
-pub struct AudioProcessor {
-    note_manager: NoteManager,
-    oscillators: Vec<Oscillator>,
-    global_sample_index: u64,
+pub struct EventHandler {
+    note_manager: Rc<RefCell<NoteManager>>,
+    oscillators: Rc<RefCell<Vec<Oscillator>>>,
 }
 
-impl AudioProcessor {
-    pub fn new() -> Self {
+impl EventHandler {
+    pub fn new(
+        note_manager: Rc<RefCell<NoteManager>>,
+        oscillators: Rc<RefCell<Vec<Oscillator>>>,
+    ) -> Self {
         Self {
-            note_manager: NoteManager::new(),
-            oscillators: Vec::new(),
-            global_sample_index: 0,
+            note_manager,
+            oscillators,
         }
     }
 
     pub fn process_midi_events(&mut self, midi: &MidiBuffers) -> u32 {
         midi.process_all_events(|dto| {
             if dto.velocity > 0 {
-                self.note_manager.add_note(dto, &self.oscillators);
+                self.note_manager
+                    .borrow_mut()
+                    .add_note(dto, &self.oscillators.borrow_mut());
             } else {
-                self.note_manager.end_note(dto);
+                self.note_manager.borrow_mut().end_note(dto);
             }
         })
-    }
-
-    pub fn generate_audio_chunk(&mut self, sample_count: i32) -> Vec<f32> {
-        self.global_sample_index += sample_count as u64;
-        self.note_manager
-            .generate_samples(sample_count, &self.oscillators)
-    }
-
-    pub fn fill_audio_buffer(&mut self, space: i32, ring_buffer_manager: &RingBufferManager) {
-        let samples = self.generate_audio_chunk(space);
-        ring_buffer_manager.write_samples(&samples);
     }
 
     pub fn process_osc_events(&mut self, osc_buffers: &OscillatorBuffers) {
@@ -78,7 +75,7 @@ impl AudioProcessor {
             match event_type {
                 0 => {
                     // add
-                    self.oscillators.push(Oscillator {
+                    self.oscillators.borrow_mut().push(Oscillator {
                         id: osc_index,
                         wave_type: WaveType::Sine,
                         attack_length: ToolKit::convert_ms_to_sample(0.0) as u64,
@@ -96,8 +93,13 @@ impl AudioProcessor {
                 }
                 1 => {
                     // remove
-                    if let Some(pos) = self.oscillators.iter().position(|osc| osc.id == osc_index) {
-                        self.oscillators.remove(pos);
+                    if let Some(pos) = self
+                        .oscillators
+                        .borrow_mut()
+                        .iter()
+                        .position(|osc| osc.id == osc_index)
+                    {
+                        self.oscillators.borrow_mut().remove(pos);
                         console::log_1(&format!("Oscillateur {} supprimé", osc_index).into());
                     } else {
                         console::log_1(&format!("Oscillateur {} introuvable", osc_index).into());
@@ -105,7 +107,12 @@ impl AudioProcessor {
                 }
                 2 => {
                     // update
-                    if let Some(osc) = self.oscillators.iter_mut().find(|o| o.id == osc_index) {
+                    if let Some(osc) = self
+                        .oscillators
+                        .borrow_mut()
+                        .iter_mut()
+                        .find(|o| o.id == osc_index)
+                    {
                         match key {
                             1 => osc.attack_length = value as u64,
                             2 => osc.release_length = value as u64,

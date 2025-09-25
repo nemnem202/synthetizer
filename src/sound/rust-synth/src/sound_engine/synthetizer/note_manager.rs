@@ -1,11 +1,8 @@
-use web_sys::console;
-
-use crate::types::*;
-
-use crate::oscillator::*;
-
-use crate::MIXER;
-use crate::note::*;
+use crate::{
+    global::MIXER,
+    sound_engine::synthetizer::{note::Note, oscillator::Oscillator},
+    utils::types::NoteDTO,
+};
 
 pub struct NoteManager {
     notes: Vec<Note>,
@@ -43,7 +40,11 @@ impl NoteManager {
         });
     }
 
-    pub fn generate_samples(&mut self, sample_count: i32, oscillators: &[Oscillator]) -> Vec<f32> {
+    pub fn generate_raw_samples(
+        &mut self,
+        sample_count: i32,
+        oscillators: &[Oscillator],
+    ) -> Vec<f32> {
         // sample_count inclut déjà les 2 canaux
         let mut samples = Vec::with_capacity(sample_count as usize);
 
@@ -57,23 +58,11 @@ impl NoteManager {
             if self.notes.is_empty() {
             } else {
                 for note in self.notes.iter_mut() {
-                    let (l, r) = note.generate_sample(oscillators);
+                    let (l, r) = note.generate_samples_of_all_oscillators(oscillators);
                     mixed_l += l;
                     mixed_r += r;
                 }
-
-                if !oscillators.is_empty() {
-                    mixed_l /= oscillators.len() as f32;
-                    mixed_r /= oscillators.len() as f32;
-                }
             }
-
-            MIXER.with(|mix| {
-                mix.lock().unwrap().render(&mut mixed_l, &mut mixed_r);
-            });
-
-            mixed_l *= 0.1;
-            mixed_r *= 0.1;
 
             samples.push(mixed_l);
             samples.push(mixed_r);

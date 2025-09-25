@@ -1,6 +1,47 @@
 use std::any::Any;
 
-use crate::{buffers::MemoryBuffer, constants::SAMPLE_RATE, types::Mix};
+use crate::utils::{constants::SAMPLE_RATE, types::Mix};
+
+pub struct MemoryBuffer {
+    pub buffer: Vec<f32>,
+    pub size: usize,
+    pub write_index: usize,
+}
+
+impl MemoryBuffer {
+    /// Crée un buffer pour `duration_seconds` à `sample_rate` Hz
+    pub fn new(sample_rate: usize, duration_seconds: f32) -> Self {
+        let size = (sample_rate as f32 * duration_seconds * 2.0) as usize;
+        Self {
+            buffer: vec![0.0; size],
+            size,
+            write_index: 0,
+        }
+    }
+
+    pub fn write(&mut self, sample_l: f32, sample_r: f32) {
+        self.buffer[self.write_index] = sample_l;
+        self.buffer[self.write_index + 1] = sample_r;
+        self.write_index = (self.write_index + 2) % self.size;
+    }
+
+    pub fn read_mono(&self, delay_samples: usize) -> (f32, f32) {
+        let read_index = (self.size + self.write_index - delay_samples) % self.size;
+        (self.buffer[read_index], self.buffer[read_index + 1])
+    }
+
+    pub fn read_left(&self, delay_samples: usize) -> f32 {
+        // On recule de delay_samples * 2 cases (car stéréo)
+        let read_index = (self.size + self.write_index - delay_samples * 2) % self.size;
+        self.buffer[read_index]
+    }
+
+    pub fn read_right(&self, delay_samples: usize) -> f32 {
+        let read_index = (self.size + self.write_index - delay_samples * 2) % self.size;
+        // Toujours dans la paire stéréo
+        self.buffer[(read_index + 1) % self.size]
+    }
+}
 
 pub enum EffectsEnum {
     Echo,

@@ -1,6 +1,6 @@
 use std::f32::consts::TAU;
 
-use crate::types::WaveType;
+use crate::utils::types::WaveType;
 
 pub struct WaveGenerator;
 

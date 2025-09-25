@@ -1,4 +1,5 @@
-use crate::constants::*;
+use crate::utils::constants::{FREQ_A4, SAMPLE_RATE};
+
 pub struct ToolKit;
 
 impl ToolKit {
