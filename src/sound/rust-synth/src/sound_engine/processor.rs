@@ -1,5 +1,7 @@
 use std::{cell::RefCell, rc::Rc};
 
+use web_sys::console;
+
 use crate::{
     global::MIXER,
     shared_memory::ring_buffer_manager::RingBufferManager,
@@ -10,6 +12,7 @@ use crate::{
             oscillator::{self, Oscillator},
         },
     },
+    utils::constants::PROCESSING_BUFFER_SIZE,
 };
 
 pub struct AudioProcessor {
@@ -17,6 +20,8 @@ pub struct AudioProcessor {
     pub oscillators: Rc<RefCell<Vec<Oscillator>>>,
     pub event_handler: EventHandler,
     pub global_sample_index: u64,
+    pub processing_buffer: Vec<f32>, // Alloué une seule fois
+    pub processing_buffer_size: usize,
 }
 
 impl AudioProcessor {
@@ -30,34 +35,52 @@ impl AudioProcessor {
             oscillators,
             event_handler,
             global_sample_index: 0,
+            processing_buffer: vec![0.0; PROCESSING_BUFFER_SIZE * 2],
+            processing_buffer_size: PROCESSING_BUFFER_SIZE,
         }
     }
 
     pub fn process_and_fill_audio_buffer(
         &mut self,
-        sample_count: i32,
+        frame_count: i32, // Renommé pour la clarté : c'est le nombre de frames stéréo
         ring_buffer_manager: &RingBufferManager,
     ) {
-        self.global_sample_index += sample_count as u64;
-        let mut samples = self
-            .note_manager
-            .borrow_mut()
-            .generate_raw_samples(sample_count, &self.oscillators.borrow());
+        let num_elements_f32 = frame_count * 2; // C'est le nombre d'éléments f32 à traiter
+        if num_elements_f32 as usize > self.processing_buffer.len() {
+            console::error_1(
+                &format!(
+                    "Processing buffer too small! Required: {}, Actual: {}",
+                    num_elements_f32,
+                    self.processing_buffer.len()
+                )
+                .into(),
+            );
+            return;
+        }
 
-        self.apply_final_mixing(&mut samples);
+        self.global_sample_index += frame_count as u64; // C'est le nombre de frames
+        let samples_slice = &mut self.processing_buffer[0..num_elements_f32 as usize];
 
-        ring_buffer_manager.write_samples(&samples);
+        self.note_manager.borrow_mut().generate_raw_samples(
+            samples_slice,
+            frame_count as usize, // Passe le nombre de frames à generate_raw_samples
+            &self.oscillators.borrow(),
+        );
+
+        AudioProcessor::apply_final_mixing(samples_slice, &self.oscillators);
+
+        ring_buffer_manager.write_samples(samples_slice);
     }
 
-    pub fn apply_final_mixing(&self, raw_samples: &mut Vec<f32>) {
+    pub fn apply_final_mixing(raw_samples: &mut [f32], oscillators: &RefCell<Vec<Oscillator>>) {
         // Option 1: Boucle for classique (recommandée pour l'indexation par pas de 2)
         for i in (0..raw_samples.len()).step_by(2) {
             let mut mixed_l = raw_samples[i];
             let mut mixed_r = raw_samples[i + 1];
 
             // Normalisation par nombre d'oscillateurs
-            if !self.oscillators.borrow().is_empty() {
-                let osc_count = self.oscillators.borrow().len() as f32;
+            if !oscillators.borrow().is_empty() {
+                let osc_count = oscillators.borrow().len() as f32;
                 mixed_l /= osc_count;
                 mixed_r /= osc_count;
             }

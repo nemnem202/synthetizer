@@ -150,11 +150,16 @@ fn main_loop(buffers: &SharedBuffers) {
                 let r_idx = Atomics::load(read_idx, 0).unwrap();
                 let w_idx = Atomics::load(write_idx, 0).unwrap();
                 let ring_buffer_len = ring_buffer.length() as i32;
-                let space_available = (r_idx - w_idx - 1 + ring_buffer_len) % ring_buffer_len;
+                let space_available_elements =
+                    (r_idx - w_idx - 2 + ring_buffer_len) % ring_buffer_len;
 
-                if space_available > 0 {
+                let sample_count_frames = space_available_elements / 2;
+
+                if sample_count_frames > 0 {
+                    // Si au moins une frame est disponible
                     let ring_buffer_manager = RingBufferManager::new(ring_buffer, write_idx);
-                    processor.process_and_fill_audio_buffer(space_available, &ring_buffer_manager);
+                    processor
+                        .process_and_fill_audio_buffer(sample_count_frames, &ring_buffer_manager);
                 }
             }
         });

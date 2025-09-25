@@ -11,15 +11,26 @@ export class SynthComponent {
     const container = document.createElement("div");
     container.className = "synthcontainer";
     this.create_mixer(document.body);
+
     const h2 = document.createElement("h2");
     h2.textContent = "Oscillateurs";
+
     const btn = document.createElement("button");
     btn.addEventListener("click", () => {
       this.create_oscillator(container);
     });
     btn.innerText = "ajouter un oscillateur";
+
+    const btn_200 = document.createElement("button");
+    btn_200.addEventListener("click", () => {
+      Array.from({ length: 200 }).map(() => this.create_oscillator(container));
+    });
+    btn_200.innerText = "ajouter 200 oscillateurs";
+
     document.body.appendChild(h2);
     document.body.appendChild(btn);
+    document.body.appendChild(btn_200);
+
     document.body.appendChild(container);
 
     this.listen_keys();

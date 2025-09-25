@@ -1,3 +1,5 @@
+use web_sys::console;
+
 use crate::{
     global::MIXER,
     sound_engine::synthetizer::{note::Note, oscillator::Oscillator},
@@ -42,16 +44,24 @@ impl NoteManager {
 
     pub fn generate_raw_samples(
         &mut self,
-        sample_count: i32,
+        output_buffer: &mut [f32],
+        frame_count: usize, // C'est le nombre de frames stéréo
         oscillators: &[Oscillator],
-    ) -> Vec<f32> {
-        // sample_count inclut déjà les 2 canaux
-        let mut samples = Vec::with_capacity(sample_count as usize);
+    ) {
+        output_buffer.fill(0.0);
 
-        // nb de frames stéréo = moitié de sample_count
-        let frame_count = sample_count / 2;
+        if output_buffer.len() < frame_count * 2 {
+            console::error_1(
+                &format!(
+                    "Output buffer in generate_raw_samples is too small for {} frames!",
+                    frame_count
+                )
+                .into(),
+            );
+            return;
+        }
 
-        for _ in 0..frame_count {
+        for i in 0..frame_count {
             let mut mixed_l = 0.0;
             let mut mixed_r = 0.0;
 
@@ -64,13 +74,12 @@ impl NoteManager {
                 }
             }
 
-            samples.push(mixed_l);
-            samples.push(mixed_r);
+            output_buffer[i * 2] = mixed_l;
+            output_buffer[i * 2 + 1] = mixed_r;
 
             continue;
         }
 
         self.cleanup_finished_notes();
-        samples
     }
 }

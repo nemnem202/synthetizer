@@ -18,3 +18,5 @@ pub const SAMPLE_RATE: f32 = 44100.0;
 pub const FREQ_A4: f32 = 440.0;
 
 pub const OSC_QUEUE_CAPACITY: u32 = 100;
+
+pub const PROCESSING_BUFFER_SIZE: usize = 1024;
