@@ -27,9 +27,9 @@ export enum OscKey {
 
 // -------------------- Constantes FX ----------------------
 
-const FX_PARAMS_NUMBER = 16; // nombre de paramètres qu'on peut modifier + id + identifiant
-const FX_BUFFER_QUEUE_CAPACITY = 64;
-const FX_BUFFER_SIZE = FX_PARAMS_NUMBER * FX_BUFFER_QUEUE_CAPACITY;
+const FX_EVENT_SIZE = 16; // en octets --> id:Int32,event_type:int32, param_index:int32,  value:Float32
+const FX_QUEUE_CAPACITY = 64;
+const FX_BUFFER_SIZE = FX_EVENT_SIZE * FX_QUEUE_CAPACITY;
 
 export type EffectParams = { index: number; value: number };
 
@@ -39,7 +39,6 @@ export enum Effects {
 }
 
 export enum EchoParams {
-  TYPE, // générique, définit que c'est un echo
   DELAY,
   FEEDBACK,
   R_DELAY_OFFSET,
@@ -71,7 +70,8 @@ export class SynthApi {
   // ---- Buffers FX ----
 
   private static fx_queue_buffer: SharedArrayBuffer;
-  private static fx_queue_array: Float32Array;
+  private static fx_queue_int_array: Int32Array;
+  private static fx_queue_float_array: Float32Array;
   private static fx_write_index: Int32Array;
 
   private nmbr_of_oscillators = 0;
@@ -89,27 +89,38 @@ export class SynthApi {
   }
 
   private static init_midi_queue() {
-    const controlSize = 2 * Int32Array.BYTES_PER_ELEMENT;
-    SynthApi.midi_queue_buffer = new SharedArrayBuffer(controlSize + MIDI_BUFFER_SIZE);
+    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT; // read/write index
+    SynthApi.midi_queue_buffer = new SharedArrayBuffer(control_size + MIDI_BUFFER_SIZE);
 
     SynthApi.midi_write_index = new Int32Array(SynthApi.midi_queue_buffer, 0, 2);
-    SynthApi.midi_queue_array = new Uint8Array(SynthApi.midi_queue_buffer, controlSize);
+    SynthApi.midi_queue_array = new Uint8Array(SynthApi.midi_queue_buffer, control_size);
   }
 
   private static init_osc_queue() {
-    const controlSize = 2 * Int32Array.BYTES_PER_ELEMENT;
-    SynthApi.osc_queue_buffer = new SharedArrayBuffer(controlSize + OSC_BUFFER_SIZE);
+    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT; // read/write index
+    SynthApi.osc_queue_buffer = new SharedArrayBuffer(control_size + OSC_BUFFER_SIZE);
 
     SynthApi.osc_write_index = new Int32Array(SynthApi.osc_queue_buffer, 0, 2);
-    SynthApi.osc_queue_array = new Uint8Array(SynthApi.osc_queue_buffer, controlSize);
+    SynthApi.osc_queue_array = new Uint8Array(SynthApi.osc_queue_buffer, control_size);
   }
 
   private static init_fx_queue() {
-    const controlSize = 2 * Int32Array.BYTES_PER_ELEMENT;
-    SynthApi.fx_queue_buffer = new SharedArrayBuffer(controlSize + FX_BUFFER_SIZE);
+    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT; // read/write index
+    SynthApi.fx_queue_buffer = new SharedArrayBuffer(control_size + FX_BUFFER_SIZE);
 
     SynthApi.fx_write_index = new Int32Array(SynthApi.fx_queue_buffer, 0, 2);
-    SynthApi.fx_queue_array = new Float32Array(SynthApi.fx_queue_buffer, controlSize);
+
+    SynthApi.fx_queue_int_array = new Int32Array(
+      SynthApi.fx_queue_buffer,
+      control_size,
+      3 * FX_QUEUE_CAPACITY // id, param_index, event_type
+    );
+
+    SynthApi.fx_queue_float_array = new Float32Array(
+      SynthApi.fx_queue_buffer,
+      control_size + 12 * FX_QUEUE_CAPACITY, // après les 3 entiers
+      FX_QUEUE_CAPACITY // 1 float par event
+    );
   }
 
   async init() {
@@ -221,47 +232,45 @@ export class SynthApi {
 
   // ----------------------- FX -----------------------------
 
-  private static write_to_fx_queue(id: number, type: number, values: number[]) {
-    const writePos = Atomics.load(SynthApi.fx_write_index, 0);
-    const readPos = Atomics.load(SynthApi.fx_write_index, 1);
+  private static write_to_fx_queue(
+    id: number,
+    event_type: number,
+    param_index: number,
+    value: number
+  ) {
+    const write_pos = Atomics.load(SynthApi.fx_write_index, 0);
+    const read_pos = Atomics.load(SynthApi.fx_write_index, 1);
 
-    const nextWrite = (writePos + 1) % FX_BUFFER_QUEUE_CAPACITY;
-    if (nextWrite === readPos) {
+    const next_write_pos = (write_pos + 1) % FX_QUEUE_CAPACITY;
+    if (next_write_pos === read_pos) {
       console.warn("Queue FX pleine");
       return;
     }
 
-    const offset = writePos * FX_PARAMS_NUMBER;
-    SynthApi.fx_queue_array[offset] = type & 0xff;
-    SynthApi.fx_queue_array[offset + 1] = id & 0xff;
+    const int_base = write_pos * 3;
+    const float_base = write_pos;
 
-    for (let i = 0; i < values.length; i++) {
-      SynthApi.fx_queue_array[offset + 2 + i] = values[i];
-    }
+    SynthApi.fx_queue_int_array[int_base] = id;
+    SynthApi.fx_queue_int_array[int_base + 1] = event_type;
+    SynthApi.fx_queue_int_array[int_base + 2] = param_index;
+    SynthApi.fx_queue_float_array[float_base] = value;
 
-    Atomics.store(SynthApi.fx_write_index, 0, nextWrite);
+    Atomics.store(SynthApi.fx_write_index, 0, next_write_pos);
   }
 
-  add_fx(effects: EffectParams[]) {
-    const values = Array.from<number>({ length: FX_PARAMS_NUMBER - 2 }).fill(0);
-    effects.forEach((e) => (values[e.index] = e.value));
+  add_fx(param_index: number) {
     const id = Number(JSON.parse(JSON.stringify(this.nmbr_of_fx)));
-
-    SynthApi.write_to_fx_queue(id, 0, values);
+    SynthApi.write_to_fx_queue(id, 0, param_index, 0);
     this.nmbr_of_fx++;
     return id;
   }
 
-  edit_fx(effects: EffectParams[], id: number) {
-    const values = Array.from<number>({ length: FX_PARAMS_NUMBER - 2 }).fill(0);
-    effects.forEach((e) => (values[e.index] = e.value));
-    SynthApi.write_to_fx_queue(id, 2, values);
+  edit_fx(id: number, param_index: EchoParams, param_value: number) {
+    SynthApi.write_to_fx_queue(id, 2, param_index, param_value);
   }
 
   remove_fx(id: number) {
-    const values = Array.from<number>({ length: FX_PARAMS_NUMBER - 2 }).fill(0);
-    console.log("supprimer l' id: ", id);
-    SynthApi.write_to_fx_queue(id, 1, values);
+    SynthApi.write_to_fx_queue(id, 1, 0, 0);
   }
 
   public destroy() {

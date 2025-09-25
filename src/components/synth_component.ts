@@ -194,8 +194,7 @@ export class SynthComponent {
 
     btn.addEventListener("click", () => {
       const type = fx_select.value === "0" ? Effects.ECHO : Effects.FILTER;
-      const index = EchoParams.TYPE;
-      const id = this.api.add_fx([{ index: index, value: type }]);
+      const id = this.api.add_fx(type);
       this.create_mixer_module(id, container, type);
     });
 
@@ -245,10 +244,18 @@ export class SynthComponent {
     const offset_r = this.create_slider(echo, "offset_r (ms)", 0, 100, 1, 10);
     const offset_l = this.create_slider(echo, "offset_l (ms)", 0, 100, 1, 50);
 
-    delay.addEventListener("input", () => {});
-    feedback.addEventListener("input", () => {});
-    offset_l.addEventListener("input", () => {});
-    offset_r.addEventListener("input", () => {});
+    delay.addEventListener("input", () => {
+      this.api.edit_fx(id, EchoParams.DELAY, parseInt(delay.value));
+    });
+    feedback.addEventListener("input", () => {
+      this.api.edit_fx(id, EchoParams.FEEDBACK, parseFloat(feedback.value));
+    });
+    offset_l.addEventListener("input", () => {
+      this.api.edit_fx(id, EchoParams.L_DELAY_OFFSET, parseInt(offset_l.value));
+    });
+    offset_r.addEventListener("input", () => {
+      this.api.edit_fx(id, EchoParams.R_DELAY_OFFSET, parseInt(offset_r.value));
+    });
     return echo;
   }
 

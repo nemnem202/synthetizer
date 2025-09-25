@@ -82,7 +82,23 @@ pub fn init_audio_thread(
     let fx_control_arr = Int32Array::new(&fx_buffer);
     let fx_write_idx = fx_control_arr.subarray(0, 1);
     let fx_read_idx = fx_control_arr.subarray(1, 2);
-    let fx_queue = Float32Array::new(&fx_buffer);
+
+    // 2 Int32 pour write_idx + read_idx
+    let fx_int_offset = 2 * 4; // 2 Int32 * 4 octets
+    let fx_float_offset = fx_int_offset + 3 * FX_QUEUE_CAPACITY * 4; // 3 Int32 par event * 64 events * 4 octets
+
+    let fx_queue_int_full = Int32Array::new(&fx_buffer);
+    let fx_queue_float_full = Float32Array::new(&fx_buffer);
+
+    let fx_queue_int = fx_queue_int_full.subarray(
+        fx_int_offset / 4, // offset en nombre d'éléments
+        fx_int_offset / 4 + 3 * FX_QUEUE_CAPACITY,
+    );
+
+    let fx_queue_float = fx_queue_float_full.subarray(
+        fx_float_offset / 4, // offset en nombre d'éléments
+        fx_float_offset / 4 + FX_QUEUE_CAPACITY,
+    );
 
     // -------- SharedBuffers --------
     let shared_buffers = SharedBuffers {
@@ -105,7 +121,8 @@ pub fn init_audio_thread(
         fx: FxBuffers {
             write_idx: fx_write_idx,
             read_idx: fx_read_idx,
-            queue: fx_queue,
+            queue_int: fx_queue_int,
+            queue_float: fx_queue_float,
         },
     };
 

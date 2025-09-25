@@ -58,7 +58,15 @@ impl MidiBuffers {
 pub struct FxBuffers {
     pub write_idx: Int32Array,
     pub read_idx: Int32Array,
-    pub queue: Float32Array,
+    pub queue_int: Int32Array,     // fx_id, param_index, event_type
+    pub queue_float: Float32Array, // value
+}
+
+pub struct FxEventDto {
+    pub id: u32,
+    pub param_index: u32,
+    pub event_type: u32,
+    pub value: f32,
 }
 
 impl FxBuffers {
@@ -70,22 +78,23 @@ impl FxBuffers {
             return None;
         }
 
-        let event_offset = read_pos * FX_EVENT_SIZE;
-        let _event_type = self.queue.get_index(event_offset);
-        let fx_id = self.queue.get_index(event_offset + 1);
+        let int_offset = read_pos * 3; // 3 int par événement
+        let float_offset = read_pos; // 1 float par événement
 
-        let mut params = Vec::with_capacity((FX_PARAMS_NUMBER) as usize);
-        for i in 0..(FX_PARAMS_NUMBER) {
-            params.push(self.queue.get_index(event_offset + 2 + i) as f32);
-        }
+        let fx_id = self.queue_int.get_index(int_offset) as u32;
+        let event_type = self.queue_int.get_index(int_offset + 1) as u32;
+        let param_index = self.queue_int.get_index(int_offset + 2) as u32;
+
+        let value = self.queue_float.get_index(float_offset);
 
         let new_read_pos = (read_pos + 1) % FX_QUEUE_CAPACITY;
         Atomics::store(&self.read_idx, 0, new_read_pos as i32).unwrap();
 
         Some(FxEventDto {
-            id: fx_id as u32,
-            event_type: _event_type as u32,
-            params: params,
+            id: fx_id,
+            param_index,
+            event_type,
+            value,
         })
     }
 
@@ -146,12 +155,24 @@ impl MemoryBuffer {
     }
 
     pub fn read_left(&self, delay_samples: usize) -> f32 {
-        let read_index = (self.size + self.write_index - delay_samples) % self.size;
+        // On recule de delay_samples * 2 cases (car stéréo)
+        let read_index = (self.size + self.write_index - delay_samples * 2) % self.size;
         self.buffer[read_index]
     }
 
     pub fn read_right(&self, delay_samples: usize) -> f32 {
-        let read_index = (self.size + self.write_index - delay_samples) % self.size;
-        self.buffer[read_index + 1]
+        let read_index = (self.size + self.write_index - delay_samples * 2) % self.size;
+        // Toujours dans la paire stéréo
+        self.buffer[(read_index + 1) % self.size]
     }
+
+    // pub fn read_left(&self, delay_samples: usize) -> f32 {
+    //     let read_index = (self.size + self.write_index - delay_samples) % self.size;
+    //     self.buffer[read_index]
+    // }
+
+    // pub fn read_right(&self, delay_samples: usize) -> f32 {
+    //     let read_index = (self.size + self.write_index - delay_samples) % self.size;
+    //     self.buffer[read_index + 1]
+    // }
 }

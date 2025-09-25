@@ -1,3 +1,5 @@
+use std::any::Any;
+
 use crate::{buffers::MemoryBuffer, constants::SAMPLE_RATE, types::Mix};
 
 pub enum EffectsEnum {
@@ -16,9 +18,11 @@ impl TryFrom<u32> for EffectsEnum {
         }
     }
 }
-pub trait EffectTrait {
+pub trait EffectTrait: Any {
     fn id(&self) -> usize;
     fn process(&mut self, sample_l: &mut f32, sample_r: &mut f32);
+
+    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 pub struct BiquadCoeffs {
@@ -90,6 +94,10 @@ impl EffectTrait for BiquadFilter {
         *input_sample_l = output_sample_l;
         *input_sample_r = output_sample_r;
     }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 pub struct EchoParams {
@@ -99,6 +107,7 @@ pub struct EchoParams {
     pub l_delay_offset: usize,
     pub mix: Mix,
 }
+
 pub struct Echo {
     id: usize,
     pub delay: usize,
@@ -140,5 +149,9 @@ impl EffectTrait for Echo {
         *input_l = self.mix.dry * *input_l + self.mix.wet * l * self.feedback;
         *input_r = self.mix.dry * *input_r + self.mix.wet * r * self.feedback;
         self.memory.write(*input_l, *input_r);
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

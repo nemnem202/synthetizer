@@ -24,24 +24,6 @@ impl Mixer {
             },
         };
 
-        // Crée ton filtre
-        let test_filter = BiquadFilter::new(800.0, 0.7, 5);
-
-        // let test_echo_mix = Mix { dry: 1.0, wet: 1.0 };
-
-        // let test_echo: Echo = Echo::new(
-        //     test_echo_mix,
-        //     ToolKit::convert_ms_to_sample(1000.0),
-        //     0.7,
-        //     ToolKit::convert_ms_to_sample(10.0),
-        //     ToolKit::convert_ms_to_sample(50.0),
-        //     10,
-        // );
-
-        // Ajoute-le au vecteur (box pour dyn trait)
-        mixer.effects.push(Box::new(test_filter));
-        // mixer.effects.push(Box::new(test_echo));
-
         mixer
     }
     pub fn render(&mut self, sample_l: &mut f32, sample_r: &mut f32) {
@@ -50,7 +32,7 @@ impl Mixer {
         }
     }
 
-    pub fn create_echo(&mut self, id: u32, params: Vec<f32>) {
+    pub fn create_echo(&mut self, id: u32) {
         console::log_1(&format!("Echo créé à l'id {}", id).into());
         let echo = Echo::new(
             self.ECHO_DEFAULT_PRESET.delay,
@@ -64,18 +46,28 @@ impl Mixer {
         self.effects.push(Box::new(echo));
     }
 
-    pub fn update_echo(&mut self, id: u32, params: Vec<f32>) {
-        // let mix = Mix {
-        //     dry: params[5],
-        //     wet: params[6],
-        // };
-        // let echo = Echo::new(
-        //     params[1] as usize,
-        //     params[2],
-        //     params[3] as usize,
-        //     params[4] as usize,
-        //     mix,
-        //     id as usize,
-        // );
+    pub fn update_fx(&mut self, id: u32, param_index: u32, value: f32) {
+        if let Some(effect) = self.effects.iter_mut().find(|e| e.id() == id as usize) {
+            if let Some(echo) = effect.as_any_mut().downcast_mut::<Echo>() {
+                console::log_1(
+                    &format!("Param index est {}, value est {}", param_index, value).into(),
+                );
+                match param_index {
+                    0 => echo.delay = value as usize,
+                    1 => echo.feedback = value,
+                    2 => echo.l_delay_offset = value as usize,
+                    3 => echo.r_delay_offset = value as usize,
+                    4 => echo.mix.dry = value,
+                    5 => echo.mix.wet = value,
+                    _ => console::error_1(&format!("Cannot update {}", param_index).into()),
+                }
+            } else {
+                println!("L'effet avec l'id {} n'est pas un Echo", id);
+            }
+        }
+    }
+
+    pub fn remove_fx(&mut self, id: u32) {
+        self.effects.retain(|e| e.id() != id as usize);
     }
 }

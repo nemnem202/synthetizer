@@ -30,7 +30,7 @@ pub struct Oscillator {
 impl Oscillator {
     pub fn apply_adsr(&self, state: &mut NoteOscState, note_has_ended: bool, value: &mut f32) {
         if note_has_ended {
-            if state.end_sample_index >= self.release_length {
+            if state.end_sample_index >= self.release_length + self.delay_length {
                 state.finished = true;
                 *value = 0.0;
                 return;
