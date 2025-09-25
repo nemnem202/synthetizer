@@ -16,7 +16,7 @@ impl Mixer {
         let mut mixer = Self {
             effects: Vec::new(),
             ECHO_DEFAULT_PRESET: EchoParams {
-                delay: ToolKit::convert_ms_to_sample(1000.0),
+                delay: ToolKit::convert_ms_to_sample(300.0),
                 feedback: 0.7,
                 l_delay_offset: ToolKit::convert_ms_to_sample(10.0),
                 r_delay_offset: ToolKit::convert_ms_to_sample(50.0),
@@ -53,12 +53,12 @@ impl Mixer {
                     &format!("Param index est {}, value est {}", param_index, value).into(),
                 );
                 match param_index {
-                    0 => echo.delay = value as usize,
-                    1 => echo.feedback = value,
-                    2 => echo.l_delay_offset = value as usize,
-                    3 => echo.r_delay_offset = value as usize,
-                    4 => echo.mix.dry = value,
-                    5 => echo.mix.wet = value,
+                    0 => echo.delay = ToolKit::convert_ms_to_sample(value),
+                    1 => echo.feedback = value.min(1.0),
+                    2 => echo.l_delay_offset = ToolKit::convert_ms_to_sample(value),
+                    3 => echo.r_delay_offset = ToolKit::convert_ms_to_sample(value),
+                    4 => echo.mix.dry = value.min(1.0),
+                    5 => echo.mix.wet = value.min(1.0),
                     _ => console::error_1(&format!("Cannot update {}", param_index).into()),
                 }
             } else {
