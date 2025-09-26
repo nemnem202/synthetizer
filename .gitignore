@@ -26,3 +26,5 @@ dist-ssr
 
 src/sound/rust-synth/build/*
 src/sound/rust-synth/target/*
+src/sound/rust-sample-processor/build/*
+src/sound/rust-sample-processor/target/*

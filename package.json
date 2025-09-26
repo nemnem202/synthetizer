@@ -4,9 +4,10 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "watch:wasm": "cd src/sound/rust-synth && cargo watch -w src -s \"wasm-pack build --target web --out-dir build --release\"",
+    "watch:runstSynth": "cd src/sound/rust-synth && cargo watch -w src -s \"wasm-pack build --target web --out-dir build --release\"",
+    "watch:sampleProcessor": "cd src/sound/rust-sample-processor && cargo watch -w src -s \"wasm-pack build --target web --out-dir build --release\"",
     "watch:worklet": "tsc -p audioworklet.tsconfig.json --watch",
-    "dev": "concurrently \"npm run watch:wasm\" \"npm run watch:worklet\" \"vite\"",
+    "dev": "concurrently \"npm run watch:runstSynth\" \"npm run watch:sampleProcessor\" \"npm run watch:worklet\" \"vite\"",
     "build": "cd src/sound/rust-synth && wasm-pack build --target web --out-dir build --release && tsc && npx vite build",
     "build:tsonly": "npx vite build",
     "preview": "vite preview --host --port 4173"

@@ -2,7 +2,7 @@ use web_sys::console;
 
 use crate::{
     global::MIXER,
-    sound_engine::synthetizer::{note::Note, oscillator::Oscillator},
+    sound_engine::synthetizer::{note::Note, sampler::Sampler},
     utils::types::NoteDTO,
 };
 
@@ -15,14 +15,14 @@ impl NoteManager {
         Self { notes: Vec::new() }
     }
 
-    pub fn add_note(&mut self, dto: &NoteDTO, oscillators: &[Oscillator]) {
+    pub fn add_note(&mut self, dto: &NoteDTO, samplers: &[Sampler]) {
         if let Some(existing_note) = self.notes.iter_mut().find(|n| n.value == dto.value) {
             if existing_note.has_ended {
-                existing_note.restart(oscillators);
+                existing_note.restart(samplers);
             }
         } else {
             self.notes
-                .push(Note::new(dto.value, dto.velocity, oscillators));
+                .push(Note::new(dto.value, dto.velocity, samplers));
         }
     }
 
@@ -46,7 +46,7 @@ impl NoteManager {
         &mut self,
         output_buffer: &mut [f32],
         frame_count: usize, // C'est le nombre de frames stéréo
-        oscillators: &[Oscillator],
+        samplers: &[Sampler],
     ) {
         output_buffer.fill(0.0);
 
@@ -68,7 +68,7 @@ impl NoteManager {
             if self.notes.is_empty() {
             } else {
                 for note in self.notes.iter_mut() {
-                    let (l, r) = note.generate_samples_of_all_oscillators(oscillators);
+                    let (l, r) = note.generate_samples_of_all_samplers(samplers);
                     mixed_l += l;
                     mixed_r += r;
                 }

@@ -1,7 +1,7 @@
 # Synthétiseur Rust / WebAssembly Ultra-Performance
 
 Découvrez mon projet de **synthétiseur** développé en **Rust** et compilé en **WebAssembly** pour des performances ultra-hautes et un contrôle **low-level**.  
-**J'ai réussi à jouer jusqu'à 500 oscillateurs simultanément sans artefact audible.**
+**J'ai réussi à jouer jusqu'à 500 samplers simultanément sans artefact audible.**
 
 ## Fonctionnalités
 

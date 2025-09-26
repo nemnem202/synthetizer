@@ -17,15 +17,15 @@ export class SynthComponent {
 
     const btn = document.createElement("button");
     btn.addEventListener("click", () => {
-      this.create_oscillator(container);
+      this.create_sampler(container);
     });
-    btn.innerText = "ajouter un oscillateur";
+    btn.innerText = "ajouter un sampler";
 
     const btn_200 = document.createElement("button");
     btn_200.addEventListener("click", () => {
-      Array.from({ length: 200 }).map(() => this.create_oscillator(container));
+      Array.from({ length: 200 }).map(() => this.create_sampler(container));
     });
-    btn_200.innerText = "ajouter 200 oscillateurs";
+    btn_200.innerText = "ajouter 200 samplers";
 
     document.body.appendChild(h2);
     document.body.appendChild(btn);
@@ -36,17 +36,17 @@ export class SynthComponent {
     this.listen_keys();
   }
 
-  private create_oscillator(main_container: HTMLElement) {
-    const INDEX = this.api.create_oscillator();
+  private create_sampler(main_container: HTMLElement) {
+    const INDEX = this.api.create_sampler();
     const container = document.createElement("div");
     container.className = "oscContainer";
 
     const h2 = document.createElement("h2");
-    h2.innerText = `Oscillator ${INDEX}`;
+    h2.innerText = `Sampler ${INDEX}`;
 
     // Select waveform
     const waveformLabel = document.createElement("label");
-    waveformLabel.innerText = "Waveform: ";
+    waveformLabel.innerText = "Sample: ";
 
     const waveformSelect = document.createElement("select");
     ["sine", "square", "sawtooth", "triangle"].forEach((wave, index) => {
@@ -56,16 +56,20 @@ export class SynthComponent {
       waveformSelect.appendChild(option);
     });
 
+    const input_option = document.createElement("input");
+    input_option.type = "file";
+    input_option.accept = ".wav";
+    input_option.innerText = "importer votre waveform";
+
+    input_option.addEventListener("input", () => this.api.handle_sample(input_option.files));
+
     waveformSelect.addEventListener("input", (e) => {
-      this.api.update_oscillator(
-        INDEX,
-        OscKey.WAVEFORM,
-        parseInt(waveformSelect.value) as WaveType
-      );
+      this.api.update_sampler(INDEX, OscKey.WAVEFORM, parseInt(waveformSelect.value) as WaveType);
     });
 
     container.appendChild(h2);
     container.appendChild(waveformLabel);
+    container.appendChild(input_option);
     container.appendChild(waveformSelect);
 
     const attack = this.create_slider(container, "Attack (ms)", 0, 10000, 1, 0);
@@ -81,43 +85,43 @@ export class SynthComponent {
 
     // --- Écouteurs branchés ici ---
     attack.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.ATTACK, Number(attack.value))
+      this.api.update_sampler(INDEX, OscKey.ATTACK, Number(attack.value))
     );
 
     decay.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.DECAY, Number(decay.value))
+      this.api.update_sampler(INDEX, OscKey.DECAY, Number(decay.value))
     );
 
     sustain.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.SUSTAIN, Number(sustain.value))
+      this.api.update_sampler(INDEX, OscKey.SUSTAIN, Number(sustain.value))
     );
 
     release.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.RELEASE, Number(release.value))
+      this.api.update_sampler(INDEX, OscKey.RELEASE, Number(release.value))
     );
 
     delay.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.DELAY, Number(delay.value))
+      this.api.update_sampler(INDEX, OscKey.DELAY, Number(delay.value))
     );
 
     frequency.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency.value))
+      this.api.update_sampler(INDEX, OscKey.PITCH, Number(frequency.value))
     );
 
     frequency_full.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.PITCH, Number(frequency_full.value))
+      this.api.update_sampler(INDEX, OscKey.PITCH, Number(frequency_full.value))
     );
 
     phase.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.PHASE, Number(phase.value))
+      this.api.update_sampler(INDEX, OscKey.PHASE, Number(phase.value))
     );
 
     gain.addEventListener("input", () =>
-      this.api.update_oscillator(INDEX, OscKey.GAIN, Number(gain.value))
+      this.api.update_sampler(INDEX, OscKey.GAIN, Number(gain.value))
     );
 
     pan.addEventListener("input", () => {
-      this.api.update_oscillator(INDEX, OscKey.PAN, Number(pan.value));
+      this.api.update_sampler(INDEX, OscKey.PAN, Number(pan.value));
     });
 
     // Bouton suppression
@@ -125,7 +129,7 @@ export class SynthComponent {
     delBtn.innerText = "supprimer";
     delBtn.addEventListener("click", () => {
       container.remove();
-      this.api.remove_oscillator(INDEX);
+      this.api.remove_sampler(INDEX);
     });
 
     container.appendChild(delBtn);

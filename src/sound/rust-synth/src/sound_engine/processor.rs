@@ -9,7 +9,7 @@ use crate::{
         event_handler::{self, EventHandler},
         synthetizer::{
             note_manager::{self, NoteManager},
-            oscillator::{self, Oscillator},
+            sampler::{self, Sampler},
         },
     },
     utils::constants::PROCESSING_BUFFER_SIZE,
@@ -17,7 +17,7 @@ use crate::{
 
 pub struct AudioProcessor {
     pub note_manager: Rc<RefCell<NoteManager>>,
-    pub oscillators: Rc<RefCell<Vec<Oscillator>>>,
+    pub samplers: Rc<RefCell<Vec<Sampler>>>,
     pub event_handler: EventHandler,
     pub global_sample_index: u64,
     pub processing_buffer: Vec<f32>, // Alloué une seule fois
@@ -27,12 +27,12 @@ pub struct AudioProcessor {
 impl AudioProcessor {
     pub fn new() -> Self {
         let note_manager = Rc::new(RefCell::new(NoteManager::new()));
-        let oscillators = Rc::new(RefCell::new(Vec::new()));
-        let event_handler = EventHandler::new(Rc::clone(&note_manager), Rc::clone(&oscillators));
+        let samplers = Rc::new(RefCell::new(Vec::new()));
+        let event_handler = EventHandler::new(Rc::clone(&note_manager), Rc::clone(&samplers));
 
         Self {
             note_manager,
-            oscillators,
+            samplers,
             event_handler,
             global_sample_index: 0,
             processing_buffer: vec![0.0; PROCESSING_BUFFER_SIZE * 2],
@@ -64,23 +64,23 @@ impl AudioProcessor {
         self.note_manager.borrow_mut().generate_raw_samples(
             samples_slice,
             frame_count as usize, // Passe le nombre de frames à generate_raw_samples
-            &self.oscillators.borrow(),
+            &self.samplers.borrow(),
         );
 
-        AudioProcessor::apply_final_mixing(samples_slice, &self.oscillators);
+        AudioProcessor::apply_final_mixing(samples_slice, &self.samplers);
 
         ring_buffer_manager.write_samples(samples_slice);
     }
 
-    pub fn apply_final_mixing(raw_samples: &mut [f32], oscillators: &RefCell<Vec<Oscillator>>) {
+    pub fn apply_final_mixing(raw_samples: &mut [f32], samplers: &RefCell<Vec<Sampler>>) {
         // Option 1: Boucle for classique (recommandée pour l'indexation par pas de 2)
         for i in (0..raw_samples.len()).step_by(2) {
             let mut mixed_l = raw_samples[i];
             let mut mixed_r = raw_samples[i + 1];
 
-            // Normalisation par nombre d'oscillateurs
-            if !oscillators.borrow().is_empty() {
-                let osc_count = oscillators.borrow().len() as f32;
+            // Normalisation par nombre d'samplers
+            if !samplers.borrow().is_empty() {
+                let osc_count = samplers.borrow().len() as f32;
                 mixed_l /= osc_count;
                 mixed_r /= osc_count;
             }

@@ -7,7 +7,7 @@ use crate::{
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
-pub struct Oscillator {
+pub struct Sampler {
     pub id: u8,
     pub wave_type: WaveType,
     pub attack_length: u64,
@@ -22,7 +22,7 @@ pub struct Oscillator {
     pub gain_r: f32,
 }
 
-impl Oscillator {
+impl Sampler {
     pub fn apply_adsr(&self, state: &mut NoteOscState, note_has_ended: bool, value: &mut f32) {
         if note_has_ended {
             if state.end_sample_index >= self.release_length + self.delay_length {

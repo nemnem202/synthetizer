@@ -63,7 +63,7 @@ pub struct FxBuffers {
     pub queue_float: Float32Array, // value
 }
 
-pub struct OscillatorBuffers {
+pub struct SamplerBuffers {
     pub write_idx: Int32Array,
     pub read_idx: Int32Array,
     pub queue: Uint8Array, // 8 octets par événement
@@ -72,7 +72,7 @@ pub struct OscillatorBuffers {
 pub struct SharedBuffers {
     pub audio: AudioBuffers,
     pub midi: MidiBuffers,
-    pub osc: OscillatorBuffers,
+    pub osc: SamplerBuffers,
     pub fx: FxBuffers,
 }
 

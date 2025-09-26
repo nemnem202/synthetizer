@@ -5,12 +5,12 @@ use web_sys::console;
 
 use crate::{
     global::MIXER,
-    shared_memory::shared_buffers::{FxBuffers, MidiBuffers, OscillatorBuffers},
+    shared_memory::shared_buffers::{FxBuffers, MidiBuffers, SamplerBuffers},
     sound_engine::{
         dsp::fx::EffectsEnum,
         synthetizer::{
             note_manager::{self, NoteManager},
-            oscillator::Oscillator,
+            sampler::Sampler,
         },
     },
     utils::{
@@ -24,17 +24,17 @@ use crate::{
 
 pub struct EventHandler {
     note_manager: Rc<RefCell<NoteManager>>,
-    oscillators: Rc<RefCell<Vec<Oscillator>>>,
+    samplers: Rc<RefCell<Vec<Sampler>>>,
 }
 
 impl EventHandler {
     pub fn new(
         note_manager: Rc<RefCell<NoteManager>>,
-        oscillators: Rc<RefCell<Vec<Oscillator>>>,
+        samplers: Rc<RefCell<Vec<Sampler>>>,
     ) -> Self {
         Self {
             note_manager,
-            oscillators,
+            samplers,
         }
     }
 
@@ -43,14 +43,14 @@ impl EventHandler {
             if dto.velocity > 0 {
                 self.note_manager
                     .borrow_mut()
-                    .add_note(dto, &self.oscillators.borrow_mut());
+                    .add_note(dto, &self.samplers.borrow_mut());
             } else {
                 self.note_manager.borrow_mut().end_note(dto);
             }
         })
     }
 
-    pub fn process_osc_events(&mut self, osc_buffers: &OscillatorBuffers) {
+    pub fn process_osc_events(&mut self, osc_buffers: &SamplerBuffers) {
         let mut read_pos = Atomics::load(&osc_buffers.read_idx, 0).unwrap() as u32;
         let write_pos = Atomics::load(&osc_buffers.write_idx, 0).unwrap() as u32;
 
@@ -75,7 +75,7 @@ impl EventHandler {
             match event_type {
                 0 => {
                     // add
-                    self.oscillators.borrow_mut().push(Oscillator {
+                    self.samplers.borrow_mut().push(Sampler {
                         id: osc_index,
                         wave_type: WaveType::Sine,
                         attack_length: ToolKit::convert_ms_to_sample(0.0) as u64,
@@ -94,12 +94,12 @@ impl EventHandler {
                 1 => {
                     // remove
                     if let Some(pos) = self
-                        .oscillators
+                        .samplers
                         .borrow_mut()
                         .iter()
                         .position(|osc| osc.id == osc_index)
                     {
-                        self.oscillators.borrow_mut().remove(pos);
+                        self.samplers.borrow_mut().remove(pos);
                         console::log_1(&format!("Oscillateur {} supprimé", osc_index).into());
                     } else {
                         console::log_1(&format!("Oscillateur {} introuvable", osc_index).into());
@@ -108,7 +108,7 @@ impl EventHandler {
                 2 => {
                     // update
                     if let Some(osc) = self
-                        .oscillators
+                        .samplers
                         .borrow_mut()
                         .iter_mut()
                         .find(|o| o.id == osc_index)

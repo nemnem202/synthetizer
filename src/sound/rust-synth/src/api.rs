@@ -6,7 +6,7 @@ use crate::{
     global::{AUDIO_PROCESSOR, SHARED_BUFFERS},
     shared_memory::{
         ring_buffer_manager::RingBufferManager,
-        shared_buffers::{AudioBuffers, FxBuffers, MidiBuffers, OscillatorBuffers, SharedBuffers},
+        shared_buffers::{AudioBuffers, FxBuffers, MidiBuffers, SamplerBuffers, SharedBuffers},
     },
     sound_engine::{event_handler::EventHandler, processor::AudioProcessor},
     utils::constants::{
@@ -64,7 +64,7 @@ fn init_shared_buffers(
     let midi_read_idx = midi_control_arr.subarray(MIDI_READ_INDEX, MIDI_READ_INDEX + 1);
     let midi_queue = Uint8Array::new(&midi_buffer).subarray(8, midi_buffer.byte_length());
 
-    // -------- OSCILLATEURS --------
+    // -------- Sampler --------
     let osc_control_arr = Int32Array::new(&osc_buffer);
     let osc_write_idx = osc_control_arr.subarray(0, 1);
     let osc_read_idx = osc_control_arr.subarray(1, 2);
@@ -106,7 +106,7 @@ fn init_shared_buffers(
             read_idx: midi_read_idx,
             queue: midi_queue,
         },
-        osc: OscillatorBuffers {
+        osc: SamplerBuffers {
             write_idx: osc_write_idx,
             read_idx: osc_read_idx,
             queue: osc_queue,
@@ -120,7 +120,7 @@ fn init_shared_buffers(
     };
 
     _ = SHARED_BUFFERS.with(|cell| cell.set(shared_buffers));
-    // Initialisation du processeur audio avec les oscillateurs de test
+    // Initialisation du processeur audio avec les samplers de test
 }
 
 #[wasm_bindgen]

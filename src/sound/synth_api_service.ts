@@ -7,7 +7,7 @@ const MIDI_QUEUE_CAPACITY = 64;
 const MIDI_BUFFER_SIZE = MIDI_QUEUE_CAPACITY * MIDI_EVENT_SIZE;
 
 // -------------------- Constantes OSC ---------------------
-const OSC_EVENT_SIZE = 8; // 8 octets par évènement oscillateur
+const OSC_EVENT_SIZE = 8; // 8 octets par évènement sampler
 const OSC_QUEUE_CAPACITY = 100;
 const OSC_BUFFER_SIZE = OSC_QUEUE_CAPACITY * OSC_EVENT_SIZE;
 
@@ -74,8 +74,10 @@ export class SynthApi {
   private static fx_queue_float_array: Float32Array;
   private static fx_write_index: Int32Array;
 
-  private nmbr_of_oscillators = 0;
+  private nmbr_of_samplers = 0;
   private nmbr_of_fx = 0;
+
+  private static sample_processor_worker: Worker;
 
   constructor() {
     SynthApi.soundEngine = AudioEngineOrchestrator.getInstance();
@@ -86,6 +88,18 @@ export class SynthApi {
     SynthApi.init_midi_queue();
     SynthApi.init_osc_queue();
     SynthApi.init_fx_queue();
+
+    SynthApi.sample_processor_worker = new Worker(
+      new URL("./sampler_processor_worker.ts", import.meta.url),
+      {
+        type: "module",
+        name: "sampler_processor_worker",
+      }
+    );
+    SynthApi.sample_processor_worker.onmessage = (e: MessageEvent) => {
+      if (!e) return;
+      console.log(e.data); // .data contient le message envoyé par le worker
+    };
   }
 
   private static init_midi_queue() {
@@ -202,21 +216,21 @@ export class SynthApi {
     Atomics.store(SynthApi.osc_write_index, 0, nextWrite);
   }
 
-  public create_oscillator() {
-    const id = this.nmbr_of_oscillators;
+  public create_sampler() {
+    const id = this.nmbr_of_samplers;
 
     SynthApi.writeToOscQueue(0, id, 0, 0); // 0 = add, key et value ignorés
     console.log(`Oscillateur ${id} créé`);
-    this.nmbr_of_oscillators++;
+    this.nmbr_of_samplers++;
     return id;
   }
 
-  public remove_oscillator(osc_index: number) {
+  public remove_sampler(osc_index: number) {
     SynthApi.writeToOscQueue(1, osc_index, 0, 0); // 1 = remove
     console.log(`Oscillateur ${osc_index} supprimé`);
   }
 
-  public update_oscillator(osc_index: number, key: OscKey, value: number) {
+  public update_sampler(osc_index: number, key: OscKey, value: number) {
     SynthApi.writeToOscQueue(2, osc_index, key, value); // 2 = update
   }
 
@@ -230,6 +244,29 @@ export class SynthApi {
     return Math.pow(2, semitone / 12);
   }
 
+  public async handle_sample(files: FileList | null) {
+    if (!files) return;
+    const file = files[0];
+    if (file.type !== "audio/wav") {
+      console.log("invalid format");
+      return;
+    }
+
+    console.log("processing...");
+
+    const array_buffer = await file.arrayBuffer();
+    const audio_ctx = new AudioContext();
+    const audio_buffer = await audio_ctx.decodeAudioData(array_buffer);
+
+    const channels: Float32Array[] = [];
+    for (let i = 0; i < audio_buffer.numberOfChannels; i++) {
+      channels.push(audio_buffer.getChannelData(i));
+    }
+
+    SynthApi.sample_processor_worker.postMessage({ samples: channels[0] });
+    SynthApi.sample_processor_worker.postMessage({ samples: channels[1] });
+    console.log("worker message sent !");
+  }
   // ----------------------- FX -----------------------------
 
   private static write_to_fx_queue(
