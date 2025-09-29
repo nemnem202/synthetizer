@@ -1,10 +1,10 @@
 use std::{cell::RefCell, rc::Rc};
 
-use js_sys::Atomics;
+use js_sys::{Atomics, Float32Array, Int32Array};
 use web_sys::console;
 
 use crate::{
-    global::MIXER,
+    global::{MIXER, SAMPLE_MANAGER, SHARED_BUFFERS},
     shared_memory::shared_buffers::{FxBuffers, MidiBuffers, SamplerBuffers},
     sound_engine::{
         dsp::fx::EffectsEnum,
@@ -18,13 +18,14 @@ use crate::{
             FX_EVENT_SIZE_FLOAT, FX_EVENT_SIZE_INT, FX_QUEUE_CAPACITY, OSC_QUEUE_CAPACITY,
         },
         toolkit::ToolKit,
-        types::WaveType,
+        types::SampleEvent,
     },
 };
 
 pub struct EventHandler {
     note_manager: Rc<RefCell<NoteManager>>,
     samplers: Rc<RefCell<Vec<Sampler>>>,
+    last_sample_event: SampleEvent,
 }
 
 impl EventHandler {
@@ -35,6 +36,7 @@ impl EventHandler {
         Self {
             note_manager,
             samplers,
+            last_sample_event: SampleEvent::default(),
         }
     }
 
@@ -77,7 +79,7 @@ impl EventHandler {
                     // add
                     self.samplers.borrow_mut().push(Sampler {
                         id: osc_index,
-                        wave_type: WaveType::Sine,
+                        sample_id: 0,
                         attack_length: ToolKit::convert_ms_to_sample(0.0) as u64,
                         decay_length: ToolKit::convert_ms_to_sample(10.0) as u64,
                         sustain_gain: 0.5,
@@ -122,11 +124,7 @@ impl EventHandler {
                             6 => osc.delay_length = value as u64,
                             7 => osc.frequency_shift = value,
                             8 => osc.phase_shift = value,
-                            9 => {
-                                if let Ok(wt) = WaveType::try_from(value as u8) {
-                                    osc.wave_type = wt;
-                                }
-                            }
+                            9 => osc.sample_id = value as u32,
                             10 => {
                                 osc.gain_l = (1.0 - value) / 2.0;
                                 osc.gain_r = (1.0 + value) / 2.0
@@ -211,5 +209,49 @@ impl EventHandler {
             let mut mixer = m.lock().unwrap();
             mixer.update_fx(fx_id, param_index, value);
         })
+    }
+
+    pub fn process_sample_event(&mut self, sample_event: &Int32Array) {
+        let sample_event_index = sample_event.get_index(0);
+
+        // si on change vraiment de sampler ou sample
+        if sample_event_index as u32 != self.last_sample_event.sample_event_index {
+            console::log_1(&"traitement du sample buffer".into());
+            let new_event = SampleEvent {
+                sample_event_index: sample_event_index as u32,
+                sampler_id: sample_event.get_index(1) as u32,
+                sample_id: sample_event.get_index(2) as u32,
+                length: sample_event.get_index(3) as u32,
+                channels: sample_event.get_index(4) as u8,
+            };
+            self.last_sample_event = new_event;
+
+            SAMPLE_MANAGER.with(|sm| {
+                let mut sm = sm.lock().unwrap();
+
+                SHARED_BUFFERS.with(|sb| {
+                    if let Some(shared) = sb.get() {
+                        let sample_buffer: &Float32Array = &shared.sample_buffer;
+
+                        // Ici tu peux ajouter ton sample
+                        sm.add_sample(
+                            self.last_sample_event.sample_id,
+                            sample_buffer.clone(),
+                            self.last_sample_event.length,
+                        );
+                    }
+                });
+            });
+
+            // et ici on peut utiliser self.last_sample_event
+            if let Some(sampler) = self
+                .samplers
+                .borrow_mut()
+                .iter_mut()
+                .find(|s| s.id == self.last_sample_event.sampler_id as u8)
+            {
+                sampler.sample_id = self.last_sample_event.sample_id;
+            }
+        }
     }
 }

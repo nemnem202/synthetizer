@@ -74,6 +74,8 @@ pub struct SharedBuffers {
     pub midi: MidiBuffers,
     pub osc: SamplerBuffers,
     pub fx: FxBuffers,
+    pub sample_event: Int32Array,
+    pub sample_buffer: Float32Array,
 }
 
 pub struct FxEventDto {

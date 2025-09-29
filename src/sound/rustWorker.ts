@@ -18,18 +18,30 @@ initModule();
 
 self.onmessage = (e: MessageEvent) => {
   if (e.data.type === "init_wasm") {
-    const sharedBuffer = e.data.sharedBuffer;
-    const midi_queue_buffer = e.data.midi_queue_buffer;
-    const ringBufferSize = e.data.ringBufferSize;
-    const osc_queue_buffer = e.data.osc_queue_buffer;
-    const fx_queue_buffer = e.data.fx_queue_buffer;
-    if (
-      !(sharedBuffer instanceof SharedArrayBuffer) ||
-      typeof ringBufferSize !== "number" ||
-      !(midi_queue_buffer instanceof SharedArrayBuffer) ||
-      !(osc_queue_buffer instanceof SharedArrayBuffer) ||
-      !(fx_queue_buffer instanceof SharedArrayBuffer)
-    ) {
+    const {
+      sharedBuffer,
+      midi_queue_buffer,
+      ringBufferSize,
+      osc_queue_buffer,
+      fx_queue_buffer,
+      sample_event_buffer,
+      sample_buffer,
+    } = e.data;
+
+    const buffers = [
+      sharedBuffer,
+      midi_queue_buffer,
+      osc_queue_buffer,
+      fx_queue_buffer,
+      sample_event_buffer,
+      sample_buffer,
+    ];
+
+    const all_valid =
+      typeof ringBufferSize === "number" &&
+      buffers.every((buf) => buf instanceof SharedArrayBuffer);
+
+    if (!all_valid) {
       console.log(
         "error - invalid buffers:",
         "audio buffer valid:",
@@ -39,8 +51,13 @@ self.onmessage = (e: MessageEvent) => {
         "osc buffer valid:",
         osc_queue_buffer instanceof SharedArrayBuffer,
         "ring buffer size:",
-        ringBufferSize
+        typeof ringBufferSize === "number",
+        "sample_event_buffer",
+        sample_event_buffer instanceof SharedArrayBuffer,
+        "sample_buffer: ",
+        sample_buffer instanceof SharedArrayBuffer
       );
+
       return;
     }
 
@@ -52,7 +69,9 @@ self.onmessage = (e: MessageEvent) => {
       ringBufferSize,
       midi_queue_buffer,
       osc_queue_buffer,
-      fx_queue_buffer
+      fx_queue_buffer,
+      sample_event_buffer,
+      sample_buffer
     );
 
     console.log("[RUST WORKER] initialisation done, processing loop...");

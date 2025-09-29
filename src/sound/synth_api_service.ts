@@ -21,7 +21,7 @@ export enum OscKey {
   DELAY,
   PITCH,
   PHASE,
-  WAVEFORM,
+  SAMPLE_ID,
   PAN,
 }
 
@@ -30,6 +30,11 @@ export enum OscKey {
 const FX_EVENT_SIZE = 16; // en octets --> id:Int32,event_type:int32, param_index:int32,  value:Float32
 const FX_QUEUE_CAPACITY = 64;
 const FX_BUFFER_SIZE = FX_EVENT_SIZE * FX_QUEUE_CAPACITY;
+
+// -------------------- Constantes Sample ------------------
+
+const MAX_SAMPLE_LENGTH = 2 * 8_000_000; // ~2min stéréo 48kHz
+const SAMPLE_EVENT_SIZE = 5 * Int32Array.BYTES_PER_ELEMENT;
 
 export type EffectParams = { index: number; value: number };
 
@@ -53,6 +58,13 @@ export enum FilterParams {
   Q,
 }
 
+export type SampleEvent = {
+  sampler_id: number;
+  sample_id: number;
+  length: number;
+  channels: number;
+};
+
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
 
@@ -67,6 +79,12 @@ export class SynthApi {
   private static osc_queue_array: Uint8Array;
   private static osc_write_index: Int32Array;
 
+  // ---- Buffer Sampler ----
+
+  private static samples: SampleEvent[];
+  private static sampler_event_buffer: SharedArrayBuffer;
+  private static sample_buffer: SharedArrayBuffer;
+
   // ---- Buffers FX ----
 
   private static fx_queue_buffer: SharedArrayBuffer;
@@ -76,6 +94,7 @@ export class SynthApi {
 
   private nmbr_of_samplers = 0;
   private nmbr_of_fx = 0;
+  private static sample_event_index = 0;
 
   private static sample_processor_worker: Worker;
 
@@ -84,22 +103,13 @@ export class SynthApi {
 
     SynthApi.midi_queue_buffer = new SharedArrayBuffer(MIDI_BUFFER_SIZE);
 
-    // Initialisation des buffers
+    SynthApi.init_sample_event();
+    SynthApi.init_sample_buffer();
+    SynthApi.init_sample_processor_worker();
+
     SynthApi.init_midi_queue();
     SynthApi.init_osc_queue();
     SynthApi.init_fx_queue();
-
-    SynthApi.sample_processor_worker = new Worker(
-      new URL("./sampler_processor_worker.ts", import.meta.url),
-      {
-        type: "module",
-        name: "sampler_processor_worker",
-      }
-    );
-    SynthApi.sample_processor_worker.onmessage = (e: MessageEvent) => {
-      if (!e) return;
-      console.log(e.data); // .data contient le message envoyé par le worker
-    };
   }
 
   private static init_midi_queue() {
@@ -141,7 +151,9 @@ export class SynthApi {
     await SynthApi.soundEngine.init(
       SynthApi.midi_queue_buffer,
       SynthApi.osc_queue_buffer,
-      SynthApi.fx_queue_buffer
+      SynthApi.fx_queue_buffer,
+      SynthApi.sampler_event_buffer,
+      SynthApi.sample_buffer
     );
   }
 
@@ -181,7 +193,7 @@ export class SynthApi {
     key: OscKey,
     value: number
   ) {
-    if (key === OscKey.WAVEFORM) {
+    if (key === OscKey.SAMPLE_ID) {
     } else if (key === OscKey.PITCH) {
       value = this.convert_semitone_to_frequency_shift(value);
     } else if (
@@ -243,30 +255,6 @@ export class SynthApi {
   private static convert_semitone_to_frequency_shift(semitone: number) {
     return Math.pow(2, semitone / 12);
   }
-
-  public async handle_sample(files: FileList | null) {
-    if (!files) return;
-    const file = files[0];
-    if (file.type !== "audio/wav") {
-      console.log("invalid format");
-      return;
-    }
-
-    console.log("processing...");
-
-    const array_buffer = await file.arrayBuffer();
-    const audio_ctx = new AudioContext();
-    const audio_buffer = await audio_ctx.decodeAudioData(array_buffer);
-
-    const channels: Float32Array[] = [];
-    for (let i = 0; i < audio_buffer.numberOfChannels; i++) {
-      channels.push(audio_buffer.getChannelData(i));
-    }
-
-    SynthApi.sample_processor_worker.postMessage({ samples: channels[0] });
-    SynthApi.sample_processor_worker.postMessage({ samples: channels[1] });
-    console.log("worker message sent !");
-  }
   // ----------------------- FX -----------------------------
 
   private static write_to_fx_queue(
@@ -308,6 +296,119 @@ export class SynthApi {
 
   remove_fx(id: number) {
     SynthApi.write_to_fx_queue(id, 1, 0, 0);
+  }
+
+  // ---------------------- Sample Buffer ------------------------------
+
+  private static init_sample_buffer() {
+    // buffer principal pour contenir le sample courant (mono ou stéréo interleavé)
+    SynthApi.sample_buffer = new SharedArrayBuffer(
+      Float32Array.BYTES_PER_ELEMENT * MAX_SAMPLE_LENGTH
+    );
+  }
+
+  private static init_sample_processor_worker() {
+    SynthApi.sample_processor_worker = new Worker(
+      new URL("./sampler_processor_worker.ts", import.meta.url),
+      {
+        type: "module",
+        name: "sampler_processor_worker",
+      }
+    );
+
+    SynthApi.sample_processor_worker.postMessage({
+      type: "init",
+      sample_buffer: SynthApi.sample_buffer,
+    });
+    SynthApi.sample_processor_worker.onmessage = (e: MessageEvent) => {
+      if (!e) return;
+      if (e.data.type === "log") {
+        console.log(e.data.message);
+      } else if (e.data.type === "sampler update") {
+        this.notify_sample_event(e.data.event as SampleEvent);
+      }
+    };
+  }
+
+  // ---------------------- Sample event buffer -------------------------
+
+  private static get sample_event_view(): Uint32Array {
+    return new Uint32Array(SynthApi.sampler_event_buffer);
+  }
+
+  private static init_sample_event() {
+    SynthApi.sampler_event_buffer = new SharedArrayBuffer(SAMPLE_EVENT_SIZE);
+    // SynthApi.sample_processor_worker.postMessage({ type: "init" });
+  }
+
+  public static notify_sample_event(event: SampleEvent) {
+    console.log("Sample event to notify :", event);
+    const evt = SynthApi.sample_event_view;
+    SynthApi.sample_event_index++;
+    evt[0] = SynthApi.sample_event_index; // identifiant de l'évènement, si il change, mon synthée ajoute le sample buffer
+    evt[1] = event.sampler_id; // quel sampler doit lire
+    evt[2] = event.sample_id; // id du sample //
+    evt[3] = event.length; // nombre d'échantillons valides
+    evt[4] = event.channels; // mono=1 / stéréo=2
+  }
+
+  public async handle_sample(files: FileList | null) {
+    if (!files) return;
+    const file = files[0];
+    if (file.type !== "audio/wav") {
+      console.log("invalid format");
+      return;
+    }
+
+    console.log("processing...");
+
+    const array_buffer = await file.arrayBuffer();
+    const audio_ctx = new AudioContext();
+    const audio_buffer = await audio_ctx.decodeAudioData(array_buffer);
+
+    console.log("Fréquence d'échantillonnage :", audio_buffer.sampleRate, "Hz");
+    console.log("Durée :", audio_buffer.duration, "s");
+    console.log("Canaux :", audio_buffer.numberOfChannels);
+
+    const channels: Float32Array[] = [];
+    for (let i = 0; i < audio_buffer.numberOfChannels; i++) {
+      channels.push(audio_buffer.getChannelData(i));
+    }
+
+    if (channels[1] && audio_buffer.duration < 5) {
+      // stéréo : concatène left puis right
+      const interleaved = new Float32Array(channels[0].length + channels[1].length);
+      interleaved.set(channels[0], 0); // left
+      interleaved.set(channels[1], channels[0].length); // right
+
+      SynthApi.sample_processor_worker.postMessage({
+        samples: interleaved,
+        sampleRate: audio_buffer.sampleRate,
+        event: {
+          sampler_id: 0,
+          sample_id: 0,
+          length: interleaved.length,
+          channels: 2,
+        },
+      });
+    } else if (audio_buffer.duration < 10) {
+      SynthApi.sample_processor_worker.postMessage({
+        samples: channels[0],
+        sampleRate: audio_buffer.sampleRate,
+        event: {
+          sampler_id: 0,
+          sample_id: 0,
+          length: channels[0].length,
+          channels: 1,
+        },
+      });
+    } else {
+      console.log("durée de fichier trop longue !");
+      window.alert("Votre fichier est trop long pour être traité avec une haute qualité");
+      return;
+    }
+
+    console.log("worker message sent !");
   }
 
   public destroy() {

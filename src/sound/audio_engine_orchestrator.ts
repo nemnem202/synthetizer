@@ -36,7 +36,9 @@ export class AudioEngineOrchestrator {
   public async init(
     midi_queue_buffer: SharedArrayBuffer,
     osc_queue_buffer: SharedArrayBuffer,
-    fx_queue_buffer: SharedArrayBuffer
+    fx_queue_buffer: SharedArrayBuffer,
+    sample_event_buffer: SharedArrayBuffer,
+    sample_buffer: SharedArrayBuffer
   ): Promise<Worker | null> {
     try {
       if (this.audioCtx) return null;
@@ -59,6 +61,8 @@ export class AudioEngineOrchestrator {
             midi_queue_buffer: midi_queue_buffer,
             osc_queue_buffer: osc_queue_buffer,
             fx_queue_buffer: fx_queue_buffer,
+            sample_event_buffer: sample_event_buffer,
+            sample_buffer: sample_buffer,
           });
         }
       };

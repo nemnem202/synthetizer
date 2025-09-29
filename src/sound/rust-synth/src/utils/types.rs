@@ -21,29 +21,6 @@ impl TryFrom<u8> for EventType {
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
-pub enum WaveType {
-    Sine,
-    Square,
-    Saw,
-    Triangle,
-}
-
-impl TryFrom<u8> for WaveType {
-    type Error = &'static str;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            0 => Ok(WaveType::Sine),
-            1 => Ok(WaveType::Square),
-            2 => Ok(WaveType::Saw),
-            3 => Ok(WaveType::Triangle),
-            _ => Err("Valeur de WaveType invalide"),
-        }
-    }
-}
-
-#[wasm_bindgen]
-#[derive(Debug, Clone, Copy)]
 pub struct NoteDTO {
     pub value: u8,
     pub velocity: u8,
@@ -59,4 +36,18 @@ pub struct FxEventDto {
     pub id: u32,
     pub event_type: u32,
     pub params: Vec<f32>,
+}
+
+#[derive(Default)]
+pub struct SampleEvent {
+    pub sample_event_index: u32,
+    pub sampler_id: u32,
+    pub sample_id: u32,
+    pub length: u32,
+    pub channels: u8,
+}
+
+pub struct Sample {
+    pub id: u32,
+    pub values: Box<[f32]>,
 }

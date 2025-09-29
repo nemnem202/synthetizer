@@ -22,6 +22,8 @@ pub fn init_audio_thread(
     midi_buffer: SharedArrayBuffer,
     osc_buffer: SharedArrayBuffer,
     fx_buffer: SharedArrayBuffer,
+    sample_event_buffer: SharedArrayBuffer,
+    sample_buffer: SharedArrayBuffer,
 ) {
     init_shared_buffers(
         &shared_audio_buffer,
@@ -29,6 +31,8 @@ pub fn init_audio_thread(
         midi_buffer,
         osc_buffer,
         fx_buffer,
+        sample_event_buffer,
+        sample_buffer,
     );
     init_audio_processor();
     console::log_1(&"Buffers et processeur audio initialisés".into());
@@ -46,6 +50,8 @@ fn init_shared_buffers(
     midi_buffer: SharedArrayBuffer,
     osc_buffer: SharedArrayBuffer,
     fx_buffer: SharedArrayBuffer,
+    sample_event_buffer: SharedArrayBuffer,
+    sample_buffer: SharedArrayBuffer,
 ) {
     // -------- Audio --------
     let control_arr = Int32Array::new(&shared_audio_buffer);
@@ -69,6 +75,11 @@ fn init_shared_buffers(
     let osc_write_idx = osc_control_arr.subarray(0, 1);
     let osc_read_idx = osc_control_arr.subarray(1, 2);
     let osc_queue = Uint8Array::new(&osc_buffer).subarray(8, osc_buffer.byte_length());
+
+    // samples event
+
+    let sample_event_view = Int32Array::new(&sample_event_buffer);
+    let sample_buffer_view = Float32Array::new(&sample_buffer);
 
     // -------- FX ------------------
 
@@ -117,6 +128,8 @@ fn init_shared_buffers(
             queue_int: fx_queue_int,
             queue_float: fx_queue_float,
         },
+        sample_event: sample_event_view,
+        sample_buffer: sample_buffer_view,
     };
 
     _ = SHARED_BUFFERS.with(|cell| cell.set(shared_buffers));
@@ -175,4 +188,6 @@ fn update_input_event_buffers(event_handler: &mut EventHandler, buffers: &Shared
     event_handler.process_osc_events(&buffers.osc);
 
     event_handler.process_fx_events(&buffers.fx);
+
+    event_handler.process_sample_event(&buffers.sample_event);
 }

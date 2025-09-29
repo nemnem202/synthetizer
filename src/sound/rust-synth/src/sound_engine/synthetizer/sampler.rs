@@ -1,15 +1,16 @@
 use wasm_bindgen::prelude::*;
 
 use crate::{
-    sound_engine::synthetizer::{note::NoteOscState, wave_generation::WaveGenerator},
-    utils::{constants::SAMPLE_RATE, toolkit::ToolKit, types::WaveType},
+    global::SAMPLE_MANAGER,
+    sound_engine::synthetizer::note::NoteOscState,
+    utils::{constants::SAMPLE_RATE, toolkit::ToolKit},
 };
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Copy)]
 pub struct Sampler {
     pub id: u8,
-    pub wave_type: WaveType,
+    pub sample_id: u32,
     pub attack_length: u64,
     pub decay_length: u64,
     pub sustain_gain: f32,
@@ -67,8 +68,11 @@ impl Sampler {
 
         let freq: f32 = ToolKit::midi_to_freq(note_value) * self.frequency_shift;
 
-        let mut value = WaveGenerator::generate_sample(state.current_phase, self.wave_type)
-            * note_velocity as f32
+        let mut value = SAMPLE_MANAGER.with(|sm| {
+            sm.lock()
+                .unwrap()
+                .get_value(self.sample_id, state.start_sample_index, freq)
+        }) * note_velocity as f32
             * self.gain
             / 127.0;
 
