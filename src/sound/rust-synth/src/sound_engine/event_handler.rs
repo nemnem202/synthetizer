@@ -223,6 +223,7 @@ impl EventHandler {
                 sample_id: sample_event.get_index(2) as u32,
                 length: sample_event.get_index(3) as u32,
                 channels: sample_event.get_index(4) as u8,
+                hq: sample_event.get_index(5) as u8,
             };
             self.last_sample_event = new_event;
 
@@ -238,6 +239,7 @@ impl EventHandler {
                             self.last_sample_event.sample_id,
                             sample_buffer.clone(),
                             self.last_sample_event.length,
+                            self.last_sample_event.hq,
                         );
                     }
                 });

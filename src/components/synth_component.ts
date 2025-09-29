@@ -1,4 +1,3 @@
-import type { WaveType } from "../sound/rust-synth/build/rust_synth";
 import { EchoParams, Effects, OscKey, SynthApi } from "../sound/synth_api_service";
 
 const keys = ["q", "z", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j"];
@@ -44,33 +43,33 @@ export class SynthComponent {
     const h2 = document.createElement("h2");
     h2.innerText = `Sampler ${INDEX}`;
 
-    // Select waveform
-    const waveformLabel = document.createElement("label");
-    waveformLabel.innerText = "Sample: ";
-
-    const waveformSelect = document.createElement("select");
-    ["sine", "square", "sawtooth", "triangle"].forEach((wave, index) => {
-      const option = document.createElement("option");
-      option.value = `${index}`;
-      option.text = wave;
-      waveformSelect.appendChild(option);
-    });
-
     const input_option = document.createElement("input");
     input_option.type = "file";
     input_option.accept = ".wav";
     input_option.innerText = "importer votre waveform";
 
-    input_option.addEventListener("input", () => this.api.handle_sample(input_option.files));
+    input_option.addEventListener("input", () =>
+      this.api.handle_sample(input_option.files, false, INDEX)
+    );
 
-    waveformSelect.addEventListener("input", (e) => {
-      this.api.update_sampler(INDEX, OscKey.WAVEFORM, parseInt(waveformSelect.value) as WaveType);
-    });
+    const hq_input_option = document.createElement("input");
+    hq_input_option.id = `hq-${INDEX}`;
+    hq_input_option.type = "file";
+    hq_input_option.accept = ".wav";
+    hq_input_option.innerText = "importer votre waveform";
+
+    hq_input_option.addEventListener("input", () =>
+      this.api.handle_sample(hq_input_option.files, true, INDEX)
+    );
+
+    const hq_label_input = document.createElement("label");
+    hq_label_input.htmlFor = `hq-${INDEX}`; // INDEX doit être défini
+    hq_label_input.textContent = "hq?";
 
     container.appendChild(h2);
-    container.appendChild(waveformLabel);
     container.appendChild(input_option);
-    container.appendChild(waveformSelect);
+    container.appendChild(hq_label_input);
+    container.appendChild(hq_input_option);
 
     const attack = this.create_slider(container, "Attack (ms)", 0, 10000, 1, 0);
     const decay = this.create_slider(container, "Decay (ms)", 10, 10000, 1, 500);

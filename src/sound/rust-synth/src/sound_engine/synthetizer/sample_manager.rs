@@ -1,9 +1,7 @@
-use std::{f32::consts::TAU, ops::Index};
-
 use js_sys::Float32Array;
 use web_sys::console;
 
-use crate::utils::types::Sample;
+use crate::utils::{toolkit::ToolKit, types::Sample};
 
 pub struct SampleManager {
     samples: Vec<Sample>,
@@ -16,7 +14,7 @@ impl SampleManager {
         }
     }
 
-    pub fn add_sample(&mut self, id: u32, raw_values: Float32Array, length: u32) {
+    pub fn add_sample(&mut self, id: u32, raw_values: Float32Array, length: u32, hq: u8) {
         // Récupérer uniquement la portion utile du Float32Array
         let useful_slice = raw_values.subarray(0, length);
 
@@ -38,6 +36,7 @@ impl SampleManager {
         let sample = Sample {
             id,
             values: boxed_values,
+            hq: hq,
         };
         self.samples.push(sample);
     }
@@ -48,10 +47,13 @@ impl SampleManager {
             if table.is_empty() {
                 return 0.0;
             }
-
             let table_len = table.len() as f32;
-            let c0 = 16.3516;
-            let step = frequency / c0; // combien de cycles par index ?
+            let base_frequency: f32 = if sample.hq == 0 {
+                ToolKit::midi_to_freq(60) // C4
+            } else {
+                ToolKit::midi_to_freq(12) // C0
+            };
+            let step = frequency / base_frequency; // combien de cycles par index ?
             let pos_in_table = (index as f32 * step) % table_len;
             let i0 = pos_in_table.floor() as usize;
             let i1 = (i0 + 1) % table.len();

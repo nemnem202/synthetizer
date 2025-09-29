@@ -45,9 +45,11 @@ pub struct SampleEvent {
     pub sample_id: u32,
     pub length: u32,
     pub channels: u8,
+    pub hq: u8,
 }
 
 pub struct Sample {
     pub id: u32,
     pub values: Box<[f32]>,
+    pub hq: u8,
 }

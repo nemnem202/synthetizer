@@ -1,13 +1,11 @@
 import type { noteDTO } from "../types/note";
 import { AudioEngineOrchestrator } from "./audio_engine_orchestrator";
 
-// -------------------- Constantes MIDI --------------------
-const MIDI_EVENT_SIZE = 4; // 4 octets par évènement midi
+const MIDI_EVENT_SIZE = 4;
 const MIDI_QUEUE_CAPACITY = 64;
 const MIDI_BUFFER_SIZE = MIDI_QUEUE_CAPACITY * MIDI_EVENT_SIZE;
 
-// -------------------- Constantes OSC ---------------------
-const OSC_EVENT_SIZE = 8; // 8 octets par évènement sampler
+const OSC_EVENT_SIZE = 8;
 const OSC_QUEUE_CAPACITY = 100;
 const OSC_BUFFER_SIZE = OSC_QUEUE_CAPACITY * OSC_EVENT_SIZE;
 
@@ -25,16 +23,12 @@ export enum OscKey {
   PAN,
 }
 
-// -------------------- Constantes FX ----------------------
-
-const FX_EVENT_SIZE = 16; // en octets --> id:Int32,event_type:int32, param_index:int32,  value:Float32
+const FX_EVENT_SIZE = 16;
 const FX_QUEUE_CAPACITY = 64;
 const FX_BUFFER_SIZE = FX_EVENT_SIZE * FX_QUEUE_CAPACITY;
 
-// -------------------- Constantes Sample ------------------
-
-const MAX_SAMPLE_LENGTH = 2 * 8_000_000; // ~2min stéréo 48kHz
-const SAMPLE_EVENT_SIZE = 5 * Int32Array.BYTES_PER_ELEMENT;
+const MAX_SAMPLE_LENGTH = 2 * 8_000_000;
+const SAMPLE_EVENT_SIZE = 6 * Int32Array.BYTES_PER_ELEMENT;
 
 export type EffectParams = { index: number; value: number };
 
@@ -63,29 +57,23 @@ export type SampleEvent = {
   sample_id: number;
   length: number;
   channels: number;
+  hq: number;
 };
 
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
 
-  // ---- Buffers MIDI ----
   private static midi_queue_buffer: SharedArrayBuffer;
   private static midi_queue_array: Uint8Array;
   private static midi_write_index: Int32Array;
-
-  // ---- Buffers OSC ----
 
   private static osc_queue_buffer: SharedArrayBuffer;
   private static osc_queue_array: Uint8Array;
   private static osc_write_index: Int32Array;
 
-  // ---- Buffer Sampler ----
-
   private static samples: SampleEvent[];
   private static sampler_event_buffer: SharedArrayBuffer;
   private static sample_buffer: SharedArrayBuffer;
-
-  // ---- Buffers FX ----
 
   private static fx_queue_buffer: SharedArrayBuffer;
   private static fx_queue_int_array: Int32Array;
@@ -113,7 +101,7 @@ export class SynthApi {
   }
 
   private static init_midi_queue() {
-    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT; // read/write index
+    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT;
     SynthApi.midi_queue_buffer = new SharedArrayBuffer(control_size + MIDI_BUFFER_SIZE);
 
     SynthApi.midi_write_index = new Int32Array(SynthApi.midi_queue_buffer, 0, 2);
@@ -121,7 +109,7 @@ export class SynthApi {
   }
 
   private static init_osc_queue() {
-    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT; // read/write index
+    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT;
     SynthApi.osc_queue_buffer = new SharedArrayBuffer(control_size + OSC_BUFFER_SIZE);
 
     SynthApi.osc_write_index = new Int32Array(SynthApi.osc_queue_buffer, 0, 2);
@@ -129,7 +117,7 @@ export class SynthApi {
   }
 
   private static init_fx_queue() {
-    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT; // read/write index
+    const control_size = 2 * Int32Array.BYTES_PER_ELEMENT;
     SynthApi.fx_queue_buffer = new SharedArrayBuffer(control_size + FX_BUFFER_SIZE);
 
     SynthApi.fx_write_index = new Int32Array(SynthApi.fx_queue_buffer, 0, 2);
@@ -137,13 +125,13 @@ export class SynthApi {
     SynthApi.fx_queue_int_array = new Int32Array(
       SynthApi.fx_queue_buffer,
       control_size,
-      3 * FX_QUEUE_CAPACITY // id, param_index, event_type
+      3 * FX_QUEUE_CAPACITY
     );
 
     SynthApi.fx_queue_float_array = new Float32Array(
       SynthApi.fx_queue_buffer,
-      control_size + 12 * FX_QUEUE_CAPACITY, // après les 3 entiers
-      FX_QUEUE_CAPACITY // 1 float par event
+      control_size + 12 * FX_QUEUE_CAPACITY,
+      FX_QUEUE_CAPACITY
     );
   }
 
@@ -184,8 +172,6 @@ export class SynthApi {
 
     Atomics.store(SynthApi.midi_write_index, 0, next_write_pos);
   }
-
-  // -------------------- OSC --------------------
 
   private static writeToOscQueue(
     event_type: number,
@@ -231,19 +217,19 @@ export class SynthApi {
   public create_sampler() {
     const id = this.nmbr_of_samplers;
 
-    SynthApi.writeToOscQueue(0, id, 0, 0); // 0 = add, key et value ignorés
+    SynthApi.writeToOscQueue(0, id, 0, 0);
     console.log(`Oscillateur ${id} créé`);
     this.nmbr_of_samplers++;
     return id;
   }
 
   public remove_sampler(osc_index: number) {
-    SynthApi.writeToOscQueue(1, osc_index, 0, 0); // 1 = remove
+    SynthApi.writeToOscQueue(1, osc_index, 0, 0);
     console.log(`Oscillateur ${osc_index} supprimé`);
   }
 
   public update_sampler(osc_index: number, key: OscKey, value: number) {
-    SynthApi.writeToOscQueue(2, osc_index, key, value); // 2 = update
+    SynthApi.writeToOscQueue(2, osc_index, key, value);
   }
 
   private static convert_ms_to_sample(ms: number) {
@@ -255,7 +241,6 @@ export class SynthApi {
   private static convert_semitone_to_frequency_shift(semitone: number) {
     return Math.pow(2, semitone / 12);
   }
-  // ----------------------- FX -----------------------------
 
   private static write_to_fx_queue(
     id: number,
@@ -298,10 +283,7 @@ export class SynthApi {
     SynthApi.write_to_fx_queue(id, 1, 0, 0);
   }
 
-  // ---------------------- Sample Buffer ------------------------------
-
   private static init_sample_buffer() {
-    // buffer principal pour contenir le sample courant (mono ou stéréo interleavé)
     SynthApi.sample_buffer = new SharedArrayBuffer(
       Float32Array.BYTES_PER_ELEMENT * MAX_SAMPLE_LENGTH
     );
@@ -330,29 +312,27 @@ export class SynthApi {
     };
   }
 
-  // ---------------------- Sample event buffer -------------------------
-
   private static get sample_event_view(): Uint32Array {
     return new Uint32Array(SynthApi.sampler_event_buffer);
   }
 
   private static init_sample_event() {
     SynthApi.sampler_event_buffer = new SharedArrayBuffer(SAMPLE_EVENT_SIZE);
-    // SynthApi.sample_processor_worker.postMessage({ type: "init" });
   }
 
   public static notify_sample_event(event: SampleEvent) {
     console.log("Sample event to notify :", event);
     const evt = SynthApi.sample_event_view;
     SynthApi.sample_event_index++;
-    evt[0] = SynthApi.sample_event_index; // identifiant de l'évènement, si il change, mon synthée ajoute le sample buffer
-    evt[1] = event.sampler_id; // quel sampler doit lire
-    evt[2] = event.sample_id; // id du sample //
-    evt[3] = event.length; // nombre d'échantillons valides
-    evt[4] = event.channels; // mono=1 / stéréo=2
+    evt[0] = SynthApi.sample_event_index;
+    evt[1] = event.sampler_id;
+    evt[2] = event.sample_id;
+    evt[3] = event.length;
+    evt[4] = event.channels;
+    evt[5] = event.hq;
   }
 
-  public async handle_sample(files: FileList | null) {
+  public async handle_sample(files: FileList | null, hq: boolean, sampler_id: number) {
     if (!files) return;
     const file = files[0];
     if (file.type !== "audio/wav") {
@@ -375,20 +355,53 @@ export class SynthApi {
       channels.push(audio_buffer.getChannelData(i));
     }
 
+    if (hq) {
+      this.handleHqSample(audio_buffer, channels, sampler_id);
+    } else {
+      let total_length = channels[0].length;
+      if (channels.length >= 2) {
+        total_length += channels[1].length;
+      }
+
+      if (total_length > MAX_SAMPLE_LENGTH) {
+        console.warn("Sample trop long pour être inséré dans le buffer !");
+        return;
+      }
+      // Création d'un Float32Array sur le buffer partagé
+      const buffer_view = new Float32Array(SynthApi.sample_buffer, 0, total_length);
+
+      // Écriture des channels dans le buffer
+      buffer_view.set(channels[0], 0);
+      if (channels.length >= 2) {
+        buffer_view.set(channels[1], channels[0].length);
+      }
+
+      // Notifier l'événement
+      SynthApi.notify_sample_event({
+        sampler_id: sampler_id,
+        sample_id: 0, // tu peux incrémenter si tu veux gérer plusieurs samples
+        length: total_length,
+        channels: channels.length,
+        hq: 0,
+      });
+    }
+  }
+
+  private handleHqSample(audio_buffer: AudioBuffer, channels: Float32Array[], sampler_id: number) {
     if (channels[1] && audio_buffer.duration < 5) {
-      // stéréo : concatène left puis right
       const interleaved = new Float32Array(channels[0].length + channels[1].length);
-      interleaved.set(channels[0], 0); // left
-      interleaved.set(channels[1], channels[0].length); // right
+      interleaved.set(channels[0], 0);
+      interleaved.set(channels[1], channels[0].length);
 
       SynthApi.sample_processor_worker.postMessage({
         samples: interleaved,
         sampleRate: audio_buffer.sampleRate,
         event: {
-          sampler_id: 0,
+          sampler_id: sampler_id,
           sample_id: 0,
           length: interleaved.length,
           channels: 2,
+          hq: 1,
         },
       });
     } else if (audio_buffer.duration < 10) {
@@ -396,10 +409,11 @@ export class SynthApi {
         samples: channels[0],
         sampleRate: audio_buffer.sampleRate,
         event: {
-          sampler_id: 0,
+          sampler_id: sampler_id,
           sample_id: 0,
           length: channels[0].length,
           channels: 1,
+          hq: 1,
         },
       });
     } else {
