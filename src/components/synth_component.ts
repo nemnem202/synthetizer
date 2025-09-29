@@ -1,4 +1,4 @@
-import { EchoParams, Effects, OscKey, SynthApi } from "../sound/synth_api_service";
+import { EchoParams, Effects, FilterParams, OscKey, SynthApi } from "../sound/synth_api_service";
 
 const keys = ["q", "z", "s", "e", "d", "f", "t", "g", "y", "h", "u", "j"];
 
@@ -280,6 +280,16 @@ export class SynthComponent {
 
     const h2 = document.createElement("h2");
     h2.textContent = "Filter";
+
+    const frequency = this.create_slider(filter, "Frequency (hz)", 50, 20_000, 50, 800);
+    const q = this.create_slider(filter, "q", 0.5, 20, 0.5, 0.7);
+
+    frequency.addEventListener("input", () => {
+      this.api.edit_fx(id, FilterParams.FREQUENCY, parseFloat(frequency.value));
+    });
+    q.addEventListener("input", () => {
+      this.api.edit_fx(id, FilterParams.Q, parseFloat(frequency.value));
+    });
     return filter;
   }
 }

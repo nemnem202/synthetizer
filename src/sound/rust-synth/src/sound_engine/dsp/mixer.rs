@@ -1,7 +1,9 @@
+use std::iter::Filter;
+
 use web_sys::console;
 
 use crate::{
-    sound_engine::dsp::fx::{Echo, EchoParams, EffectTrait},
+    sound_engine::dsp::fx::{BiquadFilter, Echo, EchoParams, EffectTrait},
     utils::{toolkit::ToolKit, types::Mix},
 };
 
@@ -49,7 +51,11 @@ impl Mixer {
         if let Some(effect) = self.effects.iter_mut().find(|e| e.id() == id as usize) {
             if let Some(echo) = effect.as_any_mut().downcast_mut::<Echo>() {
                 console::log_1(
-                    &format!("Param index est {}, value est {}", param_index, value).into(),
+                    &format!(
+                        "Changement d'un echo, Param index est {}, value est {}",
+                        param_index, value
+                    )
+                    .into(),
                 );
                 match param_index {
                     0 => echo.delay = ToolKit::convert_ms_to_sample(value),
@@ -60,13 +66,30 @@ impl Mixer {
                     5 => echo.mix.wet = value.min(1.0),
                     _ => console::error_1(&format!("Cannot update {}", param_index).into()),
                 }
-            } else {
-                println!("L'effet avec l'id {} n'est pas un Echo", id);
+            } else if let Some(filter) = effect.as_any_mut().downcast_mut::<BiquadFilter>() {
+                console::log_1(
+                    &format!(
+                        "Changement d'un filtre, Param index est {}, value est {}",
+                        param_index, value
+                    )
+                    .into(),
+                );
+                match param_index {
+                    0 => filter.edit(value as f32, filter.q),
+                    1 => filter.edit(filter.frequency, value as f32),
+                    _ => console::error_1(&format!("Cannot update {}", param_index).into()),
+                }
             }
         }
     }
 
     pub fn remove_fx(&mut self, id: u32) {
         self.effects.retain(|e| e.id() != id as usize);
+    }
+
+    pub fn create_filter(&mut self, id: u32) {
+        console::log_1(&format!("Filtre créé à l'id {}", id).into());
+        let filter = BiquadFilter::new(800.0, 0.7, id as usize);
+        self.effects.push(Box::new(filter));
     }
 }

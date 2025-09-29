@@ -190,9 +190,11 @@ impl EventHandler {
                 let mut mixer = m.lock().unwrap();
                 mixer.create_echo(fx_id);
             }),
-            EffectsEnum::Filter => {
+            EffectsEnum::Filter => MIXER.with(|m| {
+                let mut mixer = m.lock().unwrap();
+                mixer.create_filter(fx_id);
                 console::log_1(&format!("Filtre créé à l'id {}", fx_id).into());
-            }
+            }),
         }
     }
 

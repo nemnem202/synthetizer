@@ -47,9 +47,9 @@ export enum EchoParams {
 }
 
 export enum FilterParams {
-  TYPE,
   FREQUENCY,
   Q,
+  TYPE,
 }
 
 export type SampleEvent = {
@@ -275,7 +275,7 @@ export class SynthApi {
     return id;
   }
 
-  edit_fx(id: number, param_index: EchoParams, param_value: number) {
+  edit_fx(id: number, param_index: EchoParams | FilterParams, param_value: number) {
     SynthApi.write_to_fx_queue(id, 2, param_index, param_value);
   }
 

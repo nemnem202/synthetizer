@@ -103,6 +103,8 @@ pub struct BiquadFilter {
     pub z1r: f32,
     pub z2l: f32,
     pub z2r: f32,
+    pub frequency: f32,
+    pub q: f32,
 }
 
 impl BiquadFilter {
@@ -114,7 +116,13 @@ impl BiquadFilter {
             z1r: 0.0,
             z2l: 0.0,
             z2r: 0.0,
+            frequency,
+            q,
         }
+    }
+
+    pub fn edit(&mut self, frequency: f32, q: f32) {
+        self.coeffs = BiquadCoeffs::calc_biquad_coeffs(frequency, q)
     }
 }
 
