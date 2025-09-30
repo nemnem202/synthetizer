@@ -50,6 +50,7 @@ export enum FilterParams {
   FREQUENCY,
   Q,
   TYPE,
+  GAIN,
 }
 
 export type SampleEvent = {

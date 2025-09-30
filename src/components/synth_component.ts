@@ -305,8 +305,27 @@ export class SynthComponent {
       this.api.edit_fx(id, FilterParams.Q, parseFloat(q.value));
     });
 
+    let gain: HTMLInputElement | null = null;
+    let gain_handler: ((e: Event) => void) | null = null;
+
     select_type.addEventListener("change", () => {
       this.api.edit_fx(id, FilterParams.TYPE, parseInt(select_type.value));
+      if (parseInt(select_type.value) === 2) {
+        gain = this.create_slider(filter, "gain (db)", 0, 20, 0.1, 5);
+        filter.appendChild(gain);
+        gain_handler = () => {
+          if (!gain) return;
+          this.api.edit_fx(id, FilterParams.GAIN, parseFloat(gain.value));
+        };
+        gain.addEventListener("input", gain_handler);
+      } else if (gain instanceof HTMLInputElement) {
+        if (gain_handler) {
+          gain.removeEventListener("input", gain_handler);
+          gain_handler = null;
+        }
+        gain.remove();
+        gain = null;
+      }
     });
 
     return filter;

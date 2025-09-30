@@ -34,7 +34,6 @@ impl Mixer {
     }
 
     pub fn create_echo(&mut self, id: u32) {
-        console::log_1(&format!("Echo créé à l'id {}", id).into());
         let echo = Echo::new(
             self.ECHO_DEFAULT_PRESET.delay,
             self.ECHO_DEFAULT_PRESET.feedback,
@@ -50,13 +49,6 @@ impl Mixer {
     pub fn update_fx(&mut self, id: u32, param_index: u32, value: f32) {
         if let Some(effect) = self.effects.iter_mut().find(|e| e.id() == id as usize) {
             if let Some(echo) = effect.as_any_mut().downcast_mut::<Echo>() {
-                console::log_1(
-                    &format!(
-                        "Changement d'un echo, Param index est {}, value est {}",
-                        param_index, value
-                    )
-                    .into(),
-                );
                 match param_index {
                     0 => echo.delay = ToolKit::convert_ms_to_sample(value),
                     1 => echo.feedback = value.min(1.0),
@@ -67,17 +59,21 @@ impl Mixer {
                     _ => console::error_1(&format!("Cannot update {}", param_index).into()),
                 }
             } else if let Some(filter) = effect.as_any_mut().downcast_mut::<BiquadFilter>() {
-                console::log_1(
-                    &format!(
-                        "Changement d'un filtre, Param index est {}, value est {}",
-                        param_index, value
-                    )
-                    .into(),
-                );
                 match param_index {
-                    0 => filter.edit(value as f32, filter.q, filter.filter_type),
-                    1 => filter.edit(filter.frequency, value as f32, filter.filter_type),
-                    2 => filter.edit(filter.frequency, filter.q, value as u8),
+                    0 => filter.edit(value as f32, filter.q, filter.filter_type, filter.gain),
+                    1 => filter.edit(
+                        filter.frequency,
+                        value as f32,
+                        filter.filter_type,
+                        filter.gain,
+                    ),
+                    2 => filter.edit(filter.frequency, filter.q, value as u8, filter.gain),
+                    3 => filter.edit(
+                        filter.frequency,
+                        filter.q,
+                        filter.filter_type as u8,
+                        value as f32,
+                    ),
                     _ => console::error_1(&format!("Cannot update {}", param_index).into()),
                 }
             }
@@ -89,8 +85,7 @@ impl Mixer {
     }
 
     pub fn create_filter(&mut self, id: u32) {
-        console::log_1(&format!("Filtre créé à l'id {}", id).into());
-        let filter = BiquadFilter::new(800.0, 0.7, id as usize, 0);
+        let filter = BiquadFilter::new(800.0, 0.7, id as usize, 0, 5.0);
         self.effects.push(Box::new(filter));
     }
 }

@@ -24,15 +24,6 @@ impl SampleManager {
         // Boxer pour stockage
         let boxed_values = values.into_boxed_slice();
 
-        console::log_1(
-            &format!(
-                "Sample créé à l'id: {}, durée du sample: {}",
-                id,
-                boxed_values.len()
-            )
-            .into(),
-        );
-
         let sample = Sample {
             id,
             values: boxed_values,

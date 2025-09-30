@@ -91,7 +91,6 @@ impl EventHandler {
                         gain_l: 1.0,
                         gain_r: 1.0,
                     });
-                    console::log_1(&format!("Oscillateur créé à l'index {}", osc_index).into());
                 }
                 1 => {
                     // remove
@@ -102,9 +101,7 @@ impl EventHandler {
                         .position(|osc| osc.id == osc_index)
                     {
                         self.samplers.borrow_mut().remove(pos);
-                        console::log_1(&format!("Oscillateur {} supprimé", osc_index).into());
                     } else {
-                        console::log_1(&format!("Oscillateur {} introuvable", osc_index).into());
                     }
                 }
                 2 => {
@@ -132,13 +129,6 @@ impl EventHandler {
 
                             _ => {}
                         }
-                        console::log_1(
-                            &format!(
-                                "Oscillateur {} mis à jour, key {}, value: {}",
-                                osc_index, key, value as u64
-                            )
-                            .into(),
-                        );
                     }
                 }
                 _ => {}
@@ -193,7 +183,6 @@ impl EventHandler {
             EffectsEnum::Filter => MIXER.with(|m| {
                 let mut mixer = m.lock().unwrap();
                 mixer.create_filter(fx_id);
-                console::log_1(&format!("Filtre créé à l'id {}", fx_id).into());
             }),
         }
     }
@@ -202,7 +191,6 @@ impl EventHandler {
         MIXER.with(|m| {
             let mut mixer = m.lock().unwrap();
             mixer.remove_fx(fx_id);
-            console::log_1(&format!("Effet avec l'id {} retiré", fx_id).into());
         })
     }
 
@@ -218,7 +206,6 @@ impl EventHandler {
 
         // si on change vraiment de sampler ou sample
         if sample_event_index as u32 != self.last_sample_event.sample_event_index {
-            console::log_1(&"traitement du sample buffer".into());
             let new_event = SampleEvent {
                 sample_event_index: sample_event_index as u32,
                 sampler_id: sample_event.get_index(1) as u32,
