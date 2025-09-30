@@ -223,13 +223,20 @@ impl EventHandler {
                     if let Some(shared) = sb.get() {
                         let sample_buffer: &Float32Array = &shared.sample_buffer;
 
-                        // Ici tu peux ajouter ton sample
-                        sm.add_sample(
-                            self.last_sample_event.sample_id,
-                            sample_buffer.clone(),
-                            self.last_sample_event.length,
-                            self.last_sample_event.hq,
-                        );
+                        // Vérifier si sample_id existe déjà
+                        let already_exists = sm
+                            .samples
+                            .iter()
+                            .any(|s| s.id == self.last_sample_event.sample_id);
+
+                        if !already_exists {
+                            sm.add_sample(
+                                self.last_sample_event.sample_id,
+                                sample_buffer.clone(),
+                                self.last_sample_event.length,
+                                self.last_sample_event.hq,
+                            );
+                        }
                     }
                 });
             });
@@ -241,7 +248,7 @@ impl EventHandler {
                 .iter_mut()
                 .find(|s| s.id == self.last_sample_event.sampler_id as u8)
             {
-                sampler.sample_id = self.last_sample_event.sample_id;
+                sampler.change_sample(self.last_sample_event.sample_id);
             }
         }
     }

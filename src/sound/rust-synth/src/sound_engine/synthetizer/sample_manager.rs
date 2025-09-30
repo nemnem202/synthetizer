@@ -4,7 +4,7 @@ use web_sys::console;
 use crate::utils::{toolkit::ToolKit, types::Sample};
 
 pub struct SampleManager {
-    samples: Vec<Sample>,
+    pub samples: Vec<Sample>,
 }
 
 impl SampleManager {
@@ -16,6 +16,7 @@ impl SampleManager {
 
     pub fn add_sample(&mut self, id: u32, raw_values: Float32Array, length: u32, hq: u8) {
         // Récupérer uniquement la portion utile du Float32Array
+        console::log_1(&"Création d'un sample".into());
         let useful_slice = raw_values.subarray(0, length);
 
         // Convertir directement en Vec<f32>

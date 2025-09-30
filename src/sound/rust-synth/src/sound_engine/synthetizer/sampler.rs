@@ -92,4 +92,8 @@ impl Sampler {
 
         (left, right)
     }
+
+    pub fn change_sample(&mut self, sample_id: u32) {
+        self.sample_id = sample_id
+    }
 }

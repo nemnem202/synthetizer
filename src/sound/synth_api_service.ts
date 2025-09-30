@@ -61,6 +61,13 @@ export type SampleEvent = {
   hq: number;
 };
 
+export type SampleData = {
+  title: string;
+  sample_id: number;
+  duration_seconds: number;
+  high_quality: boolean;
+};
+
 export class SynthApi {
   private static soundEngine: AudioEngineOrchestrator;
 
@@ -72,7 +79,7 @@ export class SynthApi {
   private static osc_queue_array: Uint8Array;
   private static osc_write_index: Int32Array;
 
-  private static samples: SampleEvent[];
+  public loaded_samples: SampleData[] = [];
   private static sampler_event_buffer: SharedArrayBuffer;
   private static sample_buffer: SharedArrayBuffer;
 
@@ -219,14 +226,12 @@ export class SynthApi {
     const id = this.nmbr_of_samplers;
 
     SynthApi.writeToOscQueue(0, id, 0, 0);
-    console.log(`Oscillateur ${id} créé`);
     this.nmbr_of_samplers++;
     return id;
   }
 
   public remove_sampler(osc_index: number) {
     SynthApi.writeToOscQueue(1, osc_index, 0, 0);
-    console.log(`Oscillateur ${osc_index} supprimé`);
   }
 
   public update_sampler(osc_index: number, key: OscKey, value: number) {
@@ -265,7 +270,6 @@ export class SynthApi {
     SynthApi.fx_queue_int_array[int_base + 1] = event_type;
     SynthApi.fx_queue_int_array[int_base + 2] = param_index;
     SynthApi.fx_queue_float_array[float_base] = value;
-    console.log("[API] value est" + value);
 
     Atomics.store(SynthApi.fx_write_index, 0, next_write_pos);
   }
@@ -323,7 +327,6 @@ export class SynthApi {
   }
 
   public static notify_sample_event(event: SampleEvent) {
-    console.log("Sample event to notify :", event);
     const evt = SynthApi.sample_event_view;
     SynthApi.sample_event_index++;
     evt[0] = SynthApi.sample_event_index;
@@ -334,7 +337,11 @@ export class SynthApi {
     evt[5] = event.hq;
   }
 
-  public async handle_sample(files: FileList | null, hq: boolean, sampler_id: number) {
+  public async import_sample(
+    files: FileList | null,
+    hq: boolean,
+    sampler_id: number
+  ): Promise<SampleData[] | void> {
     if (!files) return;
     const file = files[0];
     if (file.type !== "audio/wav") {
@@ -342,15 +349,11 @@ export class SynthApi {
       return;
     }
 
-    console.log("processing...");
+    console.log("[IMPORT SAMPLE] processing...");
 
     const array_buffer = await file.arrayBuffer();
     const audio_ctx = new AudioContext();
     const audio_buffer = await audio_ctx.decodeAudioData(array_buffer);
-
-    console.log("Fréquence d'échantillonnage :", audio_buffer.sampleRate, "Hz");
-    console.log("Durée :", audio_buffer.duration, "s");
-    console.log("Canaux :", audio_buffer.numberOfChannels);
 
     const channels: Float32Array[] = [];
     for (let i = 0; i < audio_buffer.numberOfChannels; i++) {
@@ -358,7 +361,16 @@ export class SynthApi {
     }
 
     if (hq) {
-      this.handleHqSample(audio_buffer, channels, sampler_id);
+      const new_sample_id = this.get_new_sample_id();
+      this.handleHqSample(audio_buffer, channels, sampler_id, new_sample_id);
+      const new_sample: SampleData = {
+        duration_seconds: audio_buffer.duration,
+        high_quality: true,
+        sample_id: new_sample_id,
+        title: file.name,
+      };
+
+      this.loaded_samples.push(new_sample);
     } else {
       let total_length = channels[0].length;
       if (channels.length >= 2) {
@@ -378,18 +390,52 @@ export class SynthApi {
         buffer_view.set(channels[1], channels[0].length);
       }
 
+      const new_sample_id = this.get_new_sample_id();
       // Notifier l'événement
       SynthApi.notify_sample_event({
         sampler_id: sampler_id,
-        sample_id: 0, // tu peux incrémenter si tu veux gérer plusieurs samples
+        sample_id: new_sample_id, // tu peux incrémenter si tu veux gérer plusieurs samples
         length: total_length,
         channels: channels.length,
         hq: 0,
       });
+
+      const new_sample: SampleData = {
+        duration_seconds: audio_buffer.duration,
+        high_quality: false,
+        sample_id: this.get_new_sample_id(),
+        title: file.name,
+      };
+
+      this.loaded_samples.push(new_sample);
     }
+
+    return this.loaded_samples;
   }
 
-  private handleHqSample(audio_buffer: AudioBuffer, channels: Float32Array[], sampler_id: number) {
+  public async set_existing_sample(id: number, sampler_id: number) {
+    const sample = this.loaded_samples.find((e) => e.sample_id === id);
+    if (!sample) {
+      console.error("aucun sample n' a été trouvé");
+      return;
+    }
+    const event: SampleEvent = {
+      sample_id: sample.sample_id,
+      sampler_id: sampler_id,
+      channels: 0,
+      hq: 0,
+      length: 0,
+    };
+
+    SynthApi.notify_sample_event(event);
+  }
+
+  private handleHqSample(
+    audio_buffer: AudioBuffer,
+    channels: Float32Array[],
+    sampler_id: number,
+    sample_id: number
+  ) {
     if (channels[1] && audio_buffer.duration < 5) {
       const interleaved = new Float32Array(channels[0].length + channels[1].length);
       interleaved.set(channels[0], 0);
@@ -400,7 +446,7 @@ export class SynthApi {
         sampleRate: audio_buffer.sampleRate,
         event: {
           sampler_id: sampler_id,
-          sample_id: 0,
+          sample_id: sample_id,
           length: interleaved.length,
           channels: 2,
           hq: 1,
@@ -412,7 +458,7 @@ export class SynthApi {
         sampleRate: audio_buffer.sampleRate,
         event: {
           sampler_id: sampler_id,
-          sample_id: 0,
+          sample_id: sample_id,
           length: channels[0].length,
           channels: 1,
           hq: 1,
@@ -420,13 +466,20 @@ export class SynthApi {
       });
     } else {
       console.log("durée de fichier trop longue !");
-      window.alert("Votre fichier est trop long pour être traité avec une haute qualité");
+      window.alert(
+        "Votre fichier est trop long pour être traité avec une haute qualité, essayez en mono ou avec la qualité standart."
+      );
       return;
     }
 
     console.log("worker message sent !");
   }
 
+  private get_new_sample_id(): number {
+    let i = 0;
+    while (this.loaded_samples.find((e) => e.sample_id === i)) i++;
+    return i;
+  }
   public destroy() {
     SynthApi.soundEngine.release();
   }

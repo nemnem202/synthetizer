@@ -43,13 +43,36 @@ export class SynthComponent {
     const h2 = document.createElement("h2");
     h2.innerText = `Sampler ${INDEX}`;
 
+    const sample_select = document.createElement("select");
+    sample_select.name = "samples_select";
+
+    this.api.loaded_samples.forEach((ss) => {
+      const option = document.createElement("option");
+      option.value = ss.sample_id.toString();
+      option.textContent = ss.title;
+      sample_select.appendChild(option);
+    });
+
+    sample_select.addEventListener("input", () => {
+      this.api.set_existing_sample(parseInt(sample_select.value), INDEX);
+    });
+
     const input_option = document.createElement("input");
     input_option.type = "file";
     input_option.accept = ".wav";
     input_option.innerText = "importer votre waveform";
 
     input_option.addEventListener("input", () =>
-      this.api.handle_sample(input_option.files, false, INDEX)
+      this.api.import_sample(input_option.files, false, INDEX).then((v) => {
+        if (!v) return;
+        sample_select.innerHTML = "";
+        v.forEach((ss) => {
+          const option = document.createElement("option");
+          option.value = ss.sample_id.toString();
+          option.textContent = ss.title;
+          sample_select.appendChild(option);
+        });
+      })
     );
 
     const hq_input_option = document.createElement("input");
@@ -59,7 +82,16 @@ export class SynthComponent {
     hq_input_option.innerText = "importer votre waveform";
 
     hq_input_option.addEventListener("input", () =>
-      this.api.handle_sample(hq_input_option.files, true, INDEX)
+      this.api.import_sample(hq_input_option.files, true, INDEX).then((v) => {
+        if (!v) return;
+        sample_select.innerHTML = "";
+        v.forEach((ss) => {
+          const option = document.createElement("option");
+          option.value = ss.sample_id.toString();
+          option.textContent = ss.title;
+          sample_select.appendChild(option);
+        });
+      })
     );
 
     const hq_label_input = document.createElement("label");
@@ -67,6 +99,7 @@ export class SynthComponent {
     hq_label_input.textContent = "hq?";
 
     container.appendChild(h2);
+    container.appendChild(sample_select);
     container.appendChild(input_option);
     container.appendChild(hq_label_input);
     container.appendChild(hq_input_option);
