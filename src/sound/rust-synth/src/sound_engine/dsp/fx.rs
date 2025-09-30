@@ -75,7 +75,7 @@ pub struct BiquadCoeffs {
 }
 
 impl BiquadCoeffs {
-    pub fn calc_biquad_coeffs(frequency: f32, q: f32) -> BiquadCoeffs {
+    pub fn calc_coeffs_for_lowpass(frequency: f32, q: f32) -> BiquadCoeffs {
         let w0 = 2.0 * std::f32::consts::PI * frequency / SAMPLE_RATE;
         let alpha = (w0).sin() / (2.0 * q);
 
@@ -95,6 +95,49 @@ impl BiquadCoeffs {
             a2: a2 / a0,
         }
     }
+
+    pub fn calc_coeffs_for_highpass(frequency: f32, q: f32) -> BiquadCoeffs {
+        let w0 = 2.0 * std::f32::consts::PI * frequency / SAMPLE_RATE;
+        let alpha = (w0).sin() / (2.0 * q);
+
+        let b0 = (1.0 + w0.cos()) / 2.0;
+        let b1 = -(1.0 + w0.cos());
+        let b2 = (1.0 + w0.cos()) / 2.0;
+        let a0 = 1.0 + alpha;
+        let a1 = -2.0 * w0.cos();
+        let a2 = 1.0 - alpha;
+
+        BiquadCoeffs {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
+
+    pub fn calc_coeffs_for_bell(frequency: f32, q: f32) -> BiquadCoeffs {
+        let gain_db: f32 = 10.0; // valeur par défaut
+        let a = 10f32.powf(gain_db / 40.0); // amplitude linéaire
+
+        let w0 = 2.0 * std::f32::consts::PI * frequency / SAMPLE_RATE;
+        let alpha = (w0).sin() / (2.0 * q);
+
+        let b0 = 1.0 + alpha * a;
+        let b1 = -2.0 * w0.cos();
+        let b2 = 1.0 - alpha * a;
+        let a0 = 1.0 + alpha / a;
+        let a1 = -2.0 * w0.cos();
+        let a2 = 1.0 - alpha / a;
+
+        BiquadCoeffs {
+            b0: b0 / a0,
+            b1: b1 / a0,
+            b2: b2 / a0,
+            a1: a1 / a0,
+            a2: a2 / a0,
+        }
+    }
 }
 pub struct BiquadFilter {
     id: usize,
@@ -105,12 +148,18 @@ pub struct BiquadFilter {
     pub z2r: f32,
     pub frequency: f32,
     pub q: f32,
+    pub filter_type: u8,
 }
 
 impl BiquadFilter {
-    pub fn new(frequency: f32, q: f32, id: usize) -> Self {
+    pub fn new(frequency: f32, q: f32, id: usize, filter_type: u8) -> Self {
+        let coeffs: BiquadCoeffs = match filter_type {
+            0 => BiquadCoeffs::calc_coeffs_for_lowpass(frequency, q),
+            1 => BiquadCoeffs::calc_coeffs_for_highpass(frequency, q),
+            _ => BiquadCoeffs::calc_coeffs_for_bell(frequency, q),
+        };
         BiquadFilter {
-            coeffs: BiquadCoeffs::calc_biquad_coeffs(frequency, q),
+            coeffs,
             id: id,
             z1l: 0.0,
             z1r: 0.0,
@@ -118,11 +167,20 @@ impl BiquadFilter {
             z2r: 0.0,
             frequency,
             q,
+            filter_type,
         }
     }
 
-    pub fn edit(&mut self, frequency: f32, q: f32) {
-        self.coeffs = BiquadCoeffs::calc_biquad_coeffs(frequency, q)
+    pub fn edit(&mut self, frequency: f32, q: f32, filter_type: u8) {
+        self.coeffs = match filter_type {
+            0 => BiquadCoeffs::calc_coeffs_for_lowpass(frequency, q),
+            1 => BiquadCoeffs::calc_coeffs_for_highpass(frequency, q),
+            _ => BiquadCoeffs::calc_coeffs_for_bell(frequency, q),
+        };
+
+        self.frequency = frequency;
+        self.q = q;
+        self.filter_type = filter_type
     }
 }
 

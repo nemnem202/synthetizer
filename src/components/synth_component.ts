@@ -281,15 +281,34 @@ export class SynthComponent {
     const h2 = document.createElement("h2");
     h2.textContent = "Filter";
 
-    const frequency = this.create_slider(filter, "Frequency (hz)", 50, 20_000, 50, 800);
-    const q = this.create_slider(filter, "q", 0.5, 20, 0.5, 0.7);
+    const frequency = this.create_slider(filter, "Frequency (hz)", 50, 5_000, 10, 800);
+    const q = this.create_slider(filter, "q", 0.2, 100, 0.1, 0.7);
+
+    const types = ["lowpass", "highpass", "bell"];
+    const select_type = document.createElement("select");
+    select_type.name = "filter_type";
+
+    types.forEach((t, index) => {
+      const option = document.createElement("option");
+      option.value = `${index}`;
+      option.textContent = t;
+      select_type.appendChild(option);
+    });
+
+    filter.appendChild(select_type);
 
     frequency.addEventListener("input", () => {
       this.api.edit_fx(id, FilterParams.FREQUENCY, parseFloat(frequency.value));
     });
+
     q.addEventListener("input", () => {
-      this.api.edit_fx(id, FilterParams.Q, parseFloat(frequency.value));
+      this.api.edit_fx(id, FilterParams.Q, parseFloat(q.value));
     });
+
+    select_type.addEventListener("change", () => {
+      this.api.edit_fx(id, FilterParams.TYPE, parseInt(select_type.value));
+    });
+
     return filter;
   }
 }

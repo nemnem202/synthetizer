@@ -75,8 +75,9 @@ impl Mixer {
                     .into(),
                 );
                 match param_index {
-                    0 => filter.edit(value as f32, filter.q),
-                    1 => filter.edit(filter.frequency, value as f32),
+                    0 => filter.edit(value as f32, filter.q, filter.filter_type),
+                    1 => filter.edit(filter.frequency, value as f32, filter.filter_type),
+                    2 => filter.edit(filter.frequency, filter.q, value as u8),
                     _ => console::error_1(&format!("Cannot update {}", param_index).into()),
                 }
             }
@@ -89,7 +90,7 @@ impl Mixer {
 
     pub fn create_filter(&mut self, id: u32) {
         console::log_1(&format!("Filtre créé à l'id {}", id).into());
-        let filter = BiquadFilter::new(800.0, 0.7, id as usize);
+        let filter = BiquadFilter::new(800.0, 0.7, id as usize, 0);
         self.effects.push(Box::new(filter));
     }
 }

@@ -264,6 +264,7 @@ export class SynthApi {
     SynthApi.fx_queue_int_array[int_base + 1] = event_type;
     SynthApi.fx_queue_int_array[int_base + 2] = param_index;
     SynthApi.fx_queue_float_array[float_base] = value;
+    console.log("[API] value est" + value);
 
     Atomics.store(SynthApi.fx_write_index, 0, next_write_pos);
   }
